@@ -21,9 +21,12 @@
       - Added ico toggle
       - Added logging variable values
 1.0.9
-- [ ] adding version query
+- [x] adding version query
+- [x] adding update downloader
 - [x] adding bump-block-protector
 - [x] added github releases
+1.0.10
+- [x] Tested updater
 */
 
 #include ..\chipys-ahk-library\chipys-ahk-library.ahk
@@ -35,7 +38,7 @@ Persistent
 sendmode "Input"
 SetMouseDelay 25
 
-app_version := "1.0.8", unused := "custom var"
+app_version := "1.0.9", unused := "custom var"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 ;@Ahk2Exe-SetCopyright    Freeware written by Chipy
@@ -125,9 +128,6 @@ Tray_setup()
 
 ; testing update pull
 uh := UpdateHandler(, script_meta.app_version, script_meta.file_name, script_meta.display_name, "chipys-human-interface-device-extension")
-version_var := uh._github_release_version()
-; MsgBox("Curret version is: " version_var)
-uh._github_compare_and_notify_user()
 
 
 notify_user(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), " v" app_version " Ready!")
