@@ -27,6 +27,8 @@
 - [x] added github releases
 1.0.10-11
 - [x] Tested updater
+1.1.1.
+- [x] Added manual update query (by clicking script name in TrayMenu)
 */
 
 #include ..\chipys-ahk-library\chipys-ahk-library.ahk
@@ -38,7 +40,7 @@ Persistent
 sendmode "Input"
 SetMouseDelay 25
 
-app_version := "1.1.0", unused := "custom var"
+app_version := "1.1.1", unused := "custom var"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 ;@Ahk2Exe-SetCopyright    Freeware written by Chipy
@@ -125,9 +127,8 @@ version_request_variable := ComObject("Msxml2.ServerXMLHTTP")
 load_settings()
 Tray_setup()
 
-
 ; testing update pull
-uh := UpdateHandler(, script_meta.app_version, script_meta.file_name, script_meta.display_name, "chipys-human-interface-device-extension")
+global update_handler := UpdateHandler(, script_meta.app_version, script_meta.file_name, script_meta.display_name, "chipys-human-interface-device-extension")
 
 
 notify_user(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), " v" app_version " Ready!")
@@ -293,6 +294,11 @@ notify_user(notice_string := "", source_title := "bumper_state") {
 remap_trigger() {
     global cfg
     send "{" cfg.c["remap_key"].value "}"
+}
+
+fetch_updates(){
+    global update_handler
+    update_handler.check_for_updates(true)
 }
 
 /*
@@ -633,7 +639,7 @@ save_settings() {
 Tray_setup() {
     global
     a_traymenu.delete()
-    a_traymenu.add(script_label " v" app_version, (*) => run(""))
+    a_traymenu.add(script_label " v" app_version, (*) => fetch_updates())
     a_traymenu.add()
     if cfg.c["bumper_active"].value {
         a_traymenu.add("Toggle State 	(active)", activate_bumper.bind())
