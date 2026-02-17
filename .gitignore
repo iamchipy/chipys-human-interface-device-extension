@@ -5,3 +5,4 @@
 *.bat
 *.*zip
 signtool.exe
+*.ps1
