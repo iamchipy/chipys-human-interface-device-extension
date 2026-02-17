@@ -29,6 +29,8 @@
 - [x] Tested updater
 1.1.1.
 - [x] Added manual update query (by clicking script name in TrayMenu)
+- [x] Added example ahk_exe
+- [ ] Improved auto-disable timer
 */
 
 #include ..\chipys-ahk-library\chipys-ahk-library.ahk
@@ -40,7 +42,7 @@ Persistent
 sendmode "Input"
 SetMouseDelay 25
 
-app_version := "1.1.1", unused := "custom var"
+app_version := "1.1.3", unused := "custom var"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 ;@Ahk2Exe-SetCopyright    Freeware written by Chipy
@@ -97,7 +99,7 @@ binder.ini("remap_trigger", , "", "hotkey", "Hotkey to trigger remapped key", ["
 
 ; General
 global cfg := ConfigManagerTool(cfg_path, "ConfigSettings", , script_meta)
-cfg.ini("target_window", , "ahk_exe ms-teams.exe", "edit", "Name of winow/app that should receive focus for winow-specific actions.`nConsists of a PREFIX (ahk_exe, ahk_class, ahk_id) and a windowHDL`n`nUse 'ahk_exe ' and then the 'APP.exe' name for easiest user reference. `n(Default: ahk_exe ms-teams.exe)")
+cfg.ini("target_window", , "ahk_exe ShooterGame.exe", "edit", "Name of winow/app that should receive focus for winow-specific actions.`nConsists of a PREFIX (ahk_exe, ahk_class, ahk_id) and a windowHDL`n`nUse 'ahk_exe ' and then the 'APP.exe' name for easiest user reference.")
 cfg.ini("log_level", , 5, "edit", "Sets logging level, lower value = more detail. `nUsed to show/hide things like UpdateNotification(passiveNoActionNeeded) items `n(Default: 5)")
 ; Bump settings
 cfg.ini("bump_interupt_protection", , 1, "checkbox", "Bump protection help prevent script interupting actively used mouse. (disabling this will block mouse inputs for the duration of the bump action)`n(Default:1)")
@@ -110,7 +112,7 @@ cfg.ini("bump_interval", , 290000, "edit", "Time in ms between bump checks. 60,0
 cfg.ini("bump_duration", , 1000, "edit", "REPLACED (v1.1.0) by 'bump_speed'`nTime in ms to be moving the mouse. AKA duration of the bump. ")
 cfg.ini("bump_input_mode", , "Event", "edit", "Set the input mode for the bump event. Interacts with bump_speed setting.`n'Event' will emulate mouse movements better. `n'Input' will be faster.`n(Default: 'Event')")
 cfg.ini("bump_speed", , 15, "edit", "Speed is the movement speed of the mouse during the bump motion. Range 0-100 lower is faster `n(Default:15)")
-cfg.ini("bump_notifications", , 1, "edit", "Sets the notification mode for mouse bumper:`n0 - off`n1 - Windows Toaster Notifications`n2 - Toaster + Tooltips when bumping mouse")
+cfg.ini("bump_notifications", , 0, "edit", "Sets the notification mode for mouse bumper:`n0 - off`n1 - Windows Toaster Notifications`n2 - Toaster + Tooltips when bumping mouse")
 cfg.ini("bumper_active", , , "Checkbox", "Toggle to track the active state of the bumper")
 ; Remapper settings
 cfg.ini("remap_key", , , "edit", "Set the input key to be played/used`n`n" HOTKEY_CHEATSHEET)
@@ -195,8 +197,16 @@ open_bindings() {
 }
 
 open_dev() {
-    toggle_tray_icon()
+    ; toggle_tray_icon()
     ; internal_state.gui_open()
+
+    ; test write perms
+    if (MsgBox("Will now attempt to write to file:: " LOG_PATH, "TEST?", "icon? yn") = "yes") {
+
+        FileAppend(FormatTime(A_Now, "yyyyMMdd HH:mm:ss") "|: DEV TEST STRING`n", LOG_PATH)
+        MsgBox "If you've seen no errors it likely worked, will attempt to open logs now"
+        run(LOG_PATH)
+    }
 }
 
 auto_click() {
@@ -294,9 +304,11 @@ notify_user(notice_string := "", source_title := "bumper_state") {
 remap_trigger() {
     global cfg
     send "{" cfg.c["remap_key"].value "}"
+    tooltip("sending...", , , 4)
+    tooltip_timeout(, 4)
 }
 
-fetch_updates(){
+fetch_updates() {
     global update_handler
     update_handler.check_for_updates(true)
 }
@@ -388,7 +400,7 @@ bump() {
         ToolTip("Bumping...")
         ; Handle mouse_block
         if (!block_mouse) {
-            if LOG_LEVEL < 2
+            if LOG_LEVEL <= 2
                 tooltip("BLOCKED", 10, 10, 2)
             BlockInput "MouseMove"
         }
@@ -654,6 +666,7 @@ Tray_setup() {
     a_traymenu.add("Run on Startup", (*) => run_script_on_startup("toggle"))
     if run_script_on_startup()
         a_traymenu.check("Run on Startup")
+    a_traymenu.add("Testing (DevTrigger)", (*) => open_dev())
     a_traymenu.add()
     a_traymenu.add("Change Distance 	(" cfg.c["bump_distance"].value "px)", (*) => update_move_distance())
     a_traymenu.add("Change Interval 	(" cfg.c["bump_interval"].value "ms)", (*) => update_move_interval())
@@ -665,7 +678,6 @@ Tray_setup() {
     a_traymenu.add()
     a_traymenu.add("Settings", (*) => open_settings())
     a_traymenu.add("Hotkeys", (*) => open_bindings())
-    a_traymenu.add("Dev", (*) => open_dev())
     a_traymenu.add()
     a_traymenu.add("Restart", Restart.bind())
     a_traymenu.add("Exit", terminate.bind())
@@ -813,6 +825,8 @@ DownloadAndInstallUpdate(json) {
 
 CheckForUpdate()
 /*
+
+
 
 
 
