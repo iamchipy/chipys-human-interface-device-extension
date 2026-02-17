@@ -25,7 +25,7 @@
 - [x] adding update downloader
 - [x] adding bump-block-protector
 - [x] added github releases
-1.0.10
+1.0.10-11
 - [x] Tested updater
 */
 
@@ -38,7 +38,7 @@ Persistent
 sendmode "Input"
 SetMouseDelay 25
 
-app_version := "1.0.9", unused := "custom var"
+app_version := "1.1.0", unused := "custom var"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 ;@Ahk2Exe-SetCopyright    Freeware written by Chipy
@@ -95,19 +95,19 @@ binder.ini("remap_trigger", , "", "hotkey", "Hotkey to trigger remapped key", ["
 
 ; General
 global cfg := ConfigManagerTool(cfg_path, "ConfigSettings", , script_meta)
-cfg.ini("target_window", , "ahk_exe ms-teams.exe", "edit", "")
-cfg.ini("log_level", , 5, "edit", "Sets logging level, lower value = more detail `n(Default: 5)")
+cfg.ini("target_window", , "ahk_exe ms-teams.exe", "edit", "Name of winow/app that should receive focus for winow-specific actions.`nConsists of a PREFIX (ahk_exe, ahk_class, ahk_id) and a windowHDL`n`nUse 'ahk_exe ' and then the 'APP.exe' name for easiest user reference. `n(Default: ahk_exe ms-teams.exe)")
+cfg.ini("log_level", , 5, "edit", "Sets logging level, lower value = more detail. `nUsed to show/hide things like UpdateNotification(passiveNoActionNeeded) items `n(Default: 5)")
 ; Bump settings
-cfg.ini("bump_interupt_protection", , 1, "checkbox", "Bump protection help prevent script interupting actively used mouse. (disabling this will block mouse inputs for the duration of the bump action)")
-cfg.ini("bump_mode", , "relative", "edit", "Set the bumper mode. Current options:`n1 - 'Centered' where the mouse will move around from the center of the screen`n2 - 'Relative' where the mouse moves relative to it's current position")
+cfg.ini("bump_interupt_protection", , 1, "checkbox", "Bump protection help prevent script interupting actively used mouse. (disabling this will block mouse inputs for the duration of the bump action)`n(Default:1)")
+cfg.ini("bump_mode", , "relative", "edit", "Set the bumper mode. Current options:`n1 - 'Centered' where the mouse will move around from the center of the screen`n2 - 'Relative' where the mouse moves relative to it's current position `n(Default:Relative)")
 cfg.ini("auto_off_mins", , 0, "edit", "New time to run for before automatically turning off?`n60 = 1 Hour`n480 = 8 Hours/workday")
-cfg.ini("mmo_mode", , 0, "edit", "Toggle for MMOs to move left right with A and D when bumping (1 = on, 0 = off)")
+cfg.ini("mmo_mode", , 0, "edit", "Toggle for MMOs to move left right with A and D when bumping (1 = on, 0 = off)`n(Default:0)")
 cfg.ini("bump_distance_variance", , 50, "edit", "Distance in pixels to use as random variance range. `n(Default: 50)")
 cfg.ini("bump_distance", , 500, "edit", "Distance in pixels to move the mouse when bumping it. `n(Default: 500)")
-cfg.ini("bump_interval", , 290000, "edit", "Time in ms between bump checks. 60,000 = 1 minute, 300,000 = 5 minutes.")
-cfg.ini("bump_duration", , 2000, "edit", "Time in ms to be moving the mouse. AKA duration of the bump.")
+cfg.ini("bump_interval", , 290000, "edit", "Time in ms between bump checks. 60,000 = 1 minute, 300,000 = 5 minutes.`n(Default:290,000)")
+cfg.ini("bump_duration", , 1000, "edit", "REPLACED (v1.1.0) by 'bump_speed'`nTime in ms to be moving the mouse. AKA duration of the bump. ")
 cfg.ini("bump_input_mode", , "Event", "edit", "Set the input mode for the bump event. Interacts with bump_speed setting.`n'Event' will emulate mouse movements better. `n'Input' will be faster.`n(Default: 'Event')")
-cfg.ini("bump_speed", , 35, "edit", "Speed is the movement speed of the mouse during the bump motion. Range 0-100 lower is faster `n(Default:35)")
+cfg.ini("bump_speed", , 15, "edit", "Speed is the movement speed of the mouse during the bump motion. Range 0-100 lower is faster `n(Default:15)")
 cfg.ini("bump_notifications", , 1, "edit", "Sets the notification mode for mouse bumper:`n0 - off`n1 - Windows Toaster Notifications`n2 - Toaster + Tooltips when bumping mouse")
 cfg.ini("bumper_active", , , "Checkbox", "Toggle to track the active state of the bumper")
 ; Remapper settings
@@ -439,7 +439,7 @@ bump() {
                 MouseMove(OutputVarX, OutputVarY)
                 SendMode("Event")
                 MouseMove(dis_x, dis_y, cfg.c["bump_speed"].value, "R")
-                MsgBox "No valid Bumper mode has been selected. Please assign a valid mode and try again. (valid modes should be listed in the info button of 'bumper_mode' setting)"
+                MsgBox "No valid Bumper mode has been selected. Please assign a valid mode and try again. (valid modes should be listed in the info button of 'bumper_mode' setting)", "Missing Setting!", "icon! t10"
 
         }
 
