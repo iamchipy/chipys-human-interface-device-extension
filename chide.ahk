@@ -20,6 +20,13 @@
       - Added toggle functionfor state
       - Added ico toggle
       - Added logging variable values
+1.0.9
+- [x] adding version query
+- [x] adding update downloader
+- [x] adding bump-block-protector
+- [x] added github releases
+1.0.10-11
+- [x] Tested updater
 */
 
 #include ..\chipys-ahk-library\chipys-ahk-library.ahk
@@ -31,7 +38,7 @@ Persistent
 sendmode "Input"
 SetMouseDelay 25
 
-app_version := "1.0.8", unused := "custom var"
+app_version := "1.1.0", unused := "custom var"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 ;@Ahk2Exe-SetCopyright    Freeware written by Chipy
@@ -48,7 +55,7 @@ app_version := "1.0.8", unused := "custom var"
 #Warn All, Off
 */
 
-global LOG_LEVEL := 0 
+global LOG_LEVEL := 0
 global SCRIPT_NAME := "chide"
 global CFG_PATH := SCRIPT_NAME ".cfg"
 global LOG_PATH := SCRIPT_NAME ".log"
@@ -88,14 +95,19 @@ binder.ini("remap_trigger", , "", "hotkey", "Hotkey to trigger remapped key", ["
 
 ; General
 global cfg := ConfigManagerTool(cfg_path, "ConfigSettings", , script_meta)
-cfg.ini("target_window", , "ahk_exe ms-teams.exe", "edit", "")
+cfg.ini("target_window", , "ahk_exe ms-teams.exe", "edit", "Name of winow/app that should receive focus for winow-specific actions.`nConsists of a PREFIX (ahk_exe, ahk_class, ahk_id) and a windowHDL`n`nUse 'ahk_exe ' and then the 'APP.exe' name for easiest user reference. `n(Default: ahk_exe ms-teams.exe)")
+cfg.ini("log_level", , 5, "edit", "Sets logging level, lower value = more detail. `nUsed to show/hide things like UpdateNotification(passiveNoActionNeeded) items `n(Default: 5)")
 ; Bump settings
-cfg.ini("bump_mode", , "centered", "edit", "New bumping mode (only valid option currently is 'centered' and 'other')")
+cfg.ini("bump_interupt_protection", , 1, "checkbox", "Bump protection help prevent script interupting actively used mouse. (disabling this will block mouse inputs for the duration of the bump action)`n(Default:1)")
+cfg.ini("bump_mode", , "relative", "edit", "Set the bumper mode. Current options:`n1 - 'Centered' where the mouse will move around from the center of the screen`n2 - 'Relative' where the mouse moves relative to it's current position `n(Default:Relative)")
 cfg.ini("auto_off_mins", , 0, "edit", "New time to run for before automatically turning off?`n60 = 1 Hour`n480 = 8 Hours/workday")
-cfg.ini("mmo_mode", , 0, "edit", "Toggle for MMOs to move left right with A and D when bumping (1 = on, 0 = off)")
-cfg.ini("bump_distance", , 2000, "edit", "Distance in pixels to move the mouse when bumping it.")
-cfg.ini("bump_interval", , 290000, "edit", "Time in ms between bump checks. 60,000 = 1 minute, 300,000 = 5 minutes.")
-cfg.ini("bump_duration", , 2000, "edit", "Time in ms to be moving the mouse. AKA duration of the bump.")
+cfg.ini("mmo_mode", , 0, "edit", "Toggle for MMOs to move left right with A and D when bumping (1 = on, 0 = off)`n(Default:0)")
+cfg.ini("bump_distance_variance", , 50, "edit", "Distance in pixels to use as random variance range. `n(Default: 50)")
+cfg.ini("bump_distance", , 500, "edit", "Distance in pixels to move the mouse when bumping it. `n(Default: 500)")
+cfg.ini("bump_interval", , 290000, "edit", "Time in ms between bump checks. 60,000 = 1 minute, 300,000 = 5 minutes.`n(Default:290,000)")
+cfg.ini("bump_duration", , 1000, "edit", "REPLACED (v1.1.0) by 'bump_speed'`nTime in ms to be moving the mouse. AKA duration of the bump. ")
+cfg.ini("bump_input_mode", , "Event", "edit", "Set the input mode for the bump event. Interacts with bump_speed setting.`n'Event' will emulate mouse movements better. `n'Input' will be faster.`n(Default: 'Event')")
+cfg.ini("bump_speed", , 15, "edit", "Speed is the movement speed of the mouse during the bump motion. Range 0-100 lower is faster `n(Default:15)")
 cfg.ini("bump_notifications", , 1, "edit", "Sets the notification mode for mouse bumper:`n0 - off`n1 - Windows Toaster Notifications`n2 - Toaster + Tooltips when bumping mouse")
 cfg.ini("bumper_active", , , "Checkbox", "Toggle to track the active state of the bumper")
 ; Remapper settings
@@ -112,6 +124,29 @@ internal_state.ini("tray_icon", , "chide_active.ico", "edit", "", ["toggle", "*1
 version_request_variable := ComObject("Msxml2.ServerXMLHTTP")
 load_settings()
 Tray_setup()
+
+
+; testing update pull
+uh := UpdateHandler(, script_meta.app_version, script_meta.file_name, script_meta.display_name, "chipys-human-interface-device-extension")
+
+
+notify_user(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), " v" app_version " Ready!")
+; TrayTip(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), script_label " v" app_version " Ready!", "Mute")
+; fetch_latest_version_and_prompt("https://chipy.dev/res/Chipys_Mouse_Bumper.exe_version.txt")
+
+return
+
+
+/*
+=================================================================================================
+END OF AUTO EXEC
+=================================================================================================
+*/
+/*
+=================================================================================================
+FUNCTIONS
+=================================================================================================
+*/
 
 DisplayCurrentTimePlus(minutes, use_military_time := False, time_only := False, title := "Until: ") {
     if minutes < 1
@@ -146,24 +181,6 @@ build_tray_string(bumper_state, auto_off_mins) {
         tip_string .= DisplayCurrentTimePlus(auto_off_mins)
     return tip_string
 }
-
-notify_user(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), " v" app_version " Ready!")
-; TrayTip(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), script_label " v" app_version " Ready!", "Mute")
-; fetch_latest_version_and_prompt("https://chipy.dev/res/Chipys_Mouse_Bumper.exe_version.txt")
-
-return
-
-
-/*
-=================================================================================================
-END OF AUTO EXEC
-=================================================================================================
-*/
-/*
-=================================================================================================
-FUNCTIONS
-=================================================================================================
-*/
 
 
 open_settings() {
@@ -262,7 +279,7 @@ notify_user(notice_string := "", source_title := "bumper_state") {
     append_log(notice_string)
     switch cfg.c["bump_notifications"].value {
         case 1:
-            TrayTip(notice_string, source_title,0x34)
+            TrayTip(notice_string, source_title, 0x34)
         case 2:
             TrayTip(notice_string, source_title, 0x34)
             tooltip(notice_string)
@@ -337,10 +354,12 @@ newer_version(v_one, v_two) {
 }
 
 bump() {
-    global
+    global cfg
+
+    block_mouse := cfg.c["bump_interupt_protection"].value
+
     ; note on the screen to help know when bumps are attempted
-    ToolTip("Bumping...")
-    append_log("Bumping")
+    append_log("Bump triggering [blockinput=" block_mouse "]")
     ; check if auto_off is enabled AKA in use
     if cfg.c["auto_off_mins"].value > 0 {
         ;debug msgbox auto_off_start "`n" auto_off "`n" dateadd(auto_off_start, auto_off, "minutes") "`n" A_Now
@@ -354,65 +373,123 @@ bump() {
         }
     }
 
+
     ; calculate a idle time min.
     min_idle_time := 1000 + (cfg.c["bump_interval"].value * 0.2)
     ; safety break to prevent bumping while the mouse is in use
     if A_TimeIdle > min_idle_time and cfg.c["bumper_active"].value {
+
+        ToolTip("Bumping...")
+        ; Handle mouse_block
+        if (!block_mouse) {
+            if LOG_LEVEL < 2
+                tooltip("BLOCKED", 10, 10, 2)
+            BlockInput "MouseMove"
+        }
+
+
         ; get start time of bumpts
         start_tick := A_TickCount
         ; record mouse position before bump
         MouseGetPos(&OutputVarX, &OutputVarY)
+
         ; ; check for valid mouse coords and if invalid set to center width
         ; if OutputVarX > A_ScreenWidth*2
         ; 	OutputVarX := A_ScreenWidth//2
+
         ; loop for time period configured by user
-        loop {
-            ; generate random value for movement
-            rnd_x := random(0 - cfg.c["bump_distance"].value, cfg.c["bump_distance"].value)
-            rnd_y := random(0 - cfg.c["bump_distance"].value, cfg.c["bump_distance"].value)
-            ; move mouse out by random value (or other modes)
-            if cfg.c["bump_mode"].value = "centered" {
-                MouseMove((A_ScreenWidth // 2) + rnd_x, (A_ScreenHeight // 2) + rnd_y, 35, "R")
-            } else {
-                MouseMove(rnd_x, rnd_y, 35, "R")
-            }
+        ; loop {
 
-            if cfg.c["target_window"].value {
-                if WinExist(cfg.c["target_window"].value)
-                    WinActivate cfg.c["target_window"].value
-            }
-
-            if cfg.c["mmo_mode"].value {
-                send "{a down}"
-                sleep 250
-                send "{a up}"
-                sleep 250
-                send "{d down}"
-                sleep 250
-                send "{d up}"
-            }
-
-            ; ; note on the screen to help know when bumps happen
-            ; ToolTip("MouseBumped")
-            ; sleep to let mouse move
-            sleep 100
-            ; Check to see if we've met the duration count
-            if A_TickCount - start_tick > bump_duration
-                break
-            append_log("Bumping by " rnd_x "x" rnd_y "  (relative movement)")
+        ; Set TargetWindow active etc
+        if cfg.c["target_window"].value {
+            if WinExist(cfg.c["target_window"].value)
+                WinActivate cfg.c["target_window"].value
         }
+
+        ; generate random value for movement
+        px_variance := cfg.c["bump_distance_variance"].value / 2
+        rnd_x := random(0 - px_variance, px_variance)
+        rnd_y := random(0 - px_variance, px_variance)
+        dis_x := Floor((rnd_x + cfg.c["bump_distance"].value) * Random(-1, 1) + px_variance)
+        dis_y := Floor((rnd_y + cfg.c["bump_distance"].value) * Random(-1, 1) + px_variance)
+
+
+        ; toggle sendmode
+        previous_sendmode := A_SendMode
+        SendMode(cfg.c["bump_input_mode"].value)
+
+        ; move mouse out by random value (or other modes)
+        switch StrLower(cfg.c["bump_mode"].value) {
+            case "centered":
+                MouseMove((A_ScreenWidth // 2) + dis_x, (A_ScreenHeight // 2) + dis_y, cfg.c["bump_speed"].value, "R")
+
+            case "relative":
+                ; tooltip "START", OutputVarX, OutputVarY, 4
+                ; tooltip "END", OutputVarX + dis_x, OutputVarY + dis_y, 5
+                ; MsgBox "Mouse bumped from: " OutputVarX ":" OutputVarY "`nTO:`n" OutputVarX + dis_x ":" OutputVarY + dis_y "`nv:" cfg.c["bump_distance_variance"].value "`ndist:" cfg.c["bump_distance"].value "  [" dis_x ":" dis_y "]"
+
+                ; SendMode("Input")
+                ; MouseMove(OutputVarX, OutputVarY)
+                ; SendMode("Event")
+                MouseMove(dis_x, dis_y, cfg.c["bump_speed"].value, "R")
+
+
+            default:
+                SendMode("Input")
+                MouseMove(OutputVarX, OutputVarY)
+                SendMode("Event")
+                MouseMove(dis_x, dis_y, cfg.c["bump_speed"].value, "R")
+                MsgBox "No valid Bumper mode has been selected. Please assign a valid mode and try again. (valid modes should be listed in the info button of 'bumper_mode' setting)", "Missing Setting!", "icon! t10"
+
+        }
+
+        ; toggle sendmode
+        SendMode(previous_sendmode)
+
+
+        if cfg.c["mmo_mode"].value {
+            send "{a down}"
+            sleep 250
+            send "{a up}"
+            sleep 250
+            send "{d down}"
+            sleep 250
+            send "{d up}"
+        }
+
+
+        ; ; note on the screen to help know when bumps happen
+        ; ToolTip("MouseBumped")
+        ; sleep to let mouse move
+        sleep 100
+        ; ; Check to see if we've met the duration count
+        ; if A_TickCount - start_tick > bump_duration
+        ;     break
+        append_log("Bumping by " dis_x ":" dis_y "  (relative movement)")
+        ; }
         ; return mouse to where it was
         MouseMove(OutputVarX, OutputVarY)
         append_log("Returning to " OutputVarX ":" OutputVarY)
     } else {
         ; not that this bump is being skipped
-        ; if LOG_LEVEL < 6 {
-        ; ToolTip "Mouse in use..."
+        if LOG_LEVEL < 2 {
+            ToolTip("Activity detected")
+            tooltip_timeout(, 1)
+        }
         append_log("Mouse in use within the last " floor(min_idle_time) "ms so bump skipped")
-        ; wait 1second and hide the notification
-        settimer((*) => ToolTip(""), -500)
-        ; }
+
     }
+
+    ; Unblock
+    if (!block_mouse) {
+        BlockInput "MouseMoveOff"
+        if LOG_LEVEL < 2 {
+            tooltip("released...", 10, 10, 2)
+            tooltip_timeout(1000, 2)
+
+        }
+    }
+
     ; wait 1second and hide the notification
     settimer((*) => ToolTip(""), -1000)
     ; shedule the next bump to allow for bump randomness and timely termination
@@ -591,6 +668,9 @@ Tray_setup() {
 
     ; update icon
     toggle_tray_icon(cfg.c["bumper_active"].value)
+    ; refresh log_level
+    LOG_LEVEL := cfg.c["log_level"].value
+
     append_log("SysTray setup complete`nChange Distance 	(" cfg.c["bump_distance"].value "ms)`nChange Interval 	(" cfg.c["bump_interval"].value "ms)`nChange Duration 	(" cfg.c["bump_duration"].value "ms)")
 
 
@@ -727,6 +807,30 @@ DownloadAndInstallUpdate(json) {
 
 CheckForUpdate()
 /*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
