@@ -51,7 +51,7 @@ Persistent
 sendmode "Input"
 SetMouseDelay 25
 
-app_version := "1.1.4", unused := "custom var"
+app_version := "1.1.5", unused := "custom var"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 ;@Ahk2Exe-SetCopyright    Freeware written by Chipy
@@ -80,6 +80,7 @@ if A_AhkVersion != coded_on and !A_IsCompiled
     msgbox "You are running AHK v" A_AhkVersion "`n`rThis code was writting on v" coded_on "`n`nPlease download that exact version from autohotkey.com/download/2.0/"
 
 log_overflow := ""
+is_first_execution := true
 
 
 /*
@@ -113,7 +114,7 @@ cfg.ini("log_level", , "REPORT", "DropDownList", "Sets logging level, lower valu
 ; Bump settings
 cfg.ini("bump_interupt_protection", , 1, "checkbox", "Bump protection help prevent script interupting actively used mouse. (disabling this will block mouse inputs for the duration of the bump action)`n(Default:1)")
 cfg.ini("bump_position_memory", , 1, "checkbox", "When enabled, attempts to return mouse to it's original coordinates after bumping.`n(Default:1)")
-cfg.ini("bump_mode", , "relative", "edit", "BumpMode determines how the script attempts to move the mouse.`n`nCurrent options:`n'Centered' - Mouse is moved to center of active monistor and then bumped bump_distance pixels in a random direction.`n'Relative' - Mouse moves bump_distance pixels relative to it's current position `n(Default:Relative)")
+cfg.ini("bump_mode", , "relative", "edit", "BumpMode determines how the script attempts to move the mouse.`n`nCurrent options:`n'Centered' - Mouse is moved to center of active monitor and then bumped bump_distance pixels in a random direction.`n'Relative' - Mouse moves bump_distance pixels relative to it's current position`n'minimum' - Mouse is moved to bump_distance from 0:0 and then bumped bump_distance pixels in a random direction.  `n(Default:Relative)")
 cfg.ini("auto_off_mins", , 0, "edit", "New time to run for before automatically turning off?`n60 = 1 Hour`n480 = 8 Hours/workday")
 cfg.ini("mmo_mode", , 0, "edit", "Toggle for MMOs to move left right with A and D when bumping (1 = on, 0 = off)`n(Default:0)")
 cfg.ini("bump_distance_variance", , 50, "edit", "Distance in pixels to use as random variance range. `n(Default: 50)")
@@ -132,11 +133,16 @@ cfg.ini("auto_click_interval", , 1000, "edit", "Set the interval in ms between e
 cfg.ini("auto_click_active", , , "Checkbox", "Toggle to track the active state of the auto input repeating AutoClick")
 
 ; internal state trackers
-global internal_state := ConfigManagerTool(cfg_path, "state", , script_meta)
-internal_state.ini("tray_icon", , "chide_active.ico", "edit", "", ["toggle", "*1"])
+global state := ConfigManagerTool(cfg_path, "state", , script_meta)
+state.ini("tray_icon", , "chide_active.ico", "edit", "", ["toggle", "*1"])
+state.ini("time_since_last_bump", , 0, "edit", "")
+state.ini("bump_interval_with_random")
+state.ini("last_bump_tick")
+
 
 version_request_variable := ComObject("Msxml2.ServerXMLHTTP")
 load_settings()
+activate_bumper()  ; needs to happen before tray_setup to sync state of bumper
 Tray_setup()
 
 ; testing update pull
@@ -144,9 +150,6 @@ global update_handler := UpdateHandler(, script_meta.app_version, script_meta.fi
 
 
 notify_user(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), " v" app_version " Ready!")
-; TrayTip(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), script_label " v" app_version " Ready!", "Mute")
-; fetch_latest_version_and_prompt("https://chipy.dev/res/Chipys_Mouse_Bumper.exe_version.txt")
-
 return
 
 
@@ -186,7 +189,6 @@ DisplayCurrentTimePlus(minutes, use_military_time := False, time_only := False, 
     return " (" title "" formattedTime ")"
 }
 
-
 ; Build the string for TrayTip (toaster) notificaiton of current state on reboot
 build_tray_string(bumper_state, auto_off_mins) {
     tip_string := bumper_state ? "Mode: Active" : "Mode: Inactive"
@@ -194,7 +196,6 @@ build_tray_string(bumper_state, auto_off_mins) {
         tip_string .= DisplayCurrentTimePlus(auto_off_mins)
     return tip_string
 }
-
 
 open_settings() {
     cfg.gui_open()
@@ -219,7 +220,7 @@ open_dev() {
     ; }
 
     ; Testing hte UITool
-    test_prompt := UITool.UpdatePrompt((*)=>tooltip("YOU HIT YES"),"Test Title","Do you want to APPROVE?!","Body text for this approval reques")
+    test_prompt := UITool.UpdatePrompt((*) => tooltip("YOU HIT YES"), "Test Title", "Do you want to APPROVE?!", "Body text for this approval reques")
 }
 
 auto_click() {
@@ -256,37 +257,29 @@ restart_script() {
     reload
 }
 
-toggle_bumper()
-{
-    activate_bumper()
-}
-
 toggle_tray_icon(toggle_state := -1) {
-    global internal_state, script_meta
+    global state, script_meta
     ; Set defaults if we arn't being directed to set a given state
     if (toggle_state == -1) {
-        toggle_state := !internal_state.c["tray_icon"].toggle
+        toggle_state := !state.c["tray_icon"].toggle
     }
-
-    ; tooltip internal_state.c["tray_icon"].ToString()
-    ; MsgBox internal_state.c["tray_icon"].ToString() "`nstate == " internal_state.c["tray_icon"].toggle
 
     try {
         ; execute toggle
-        if (toggle_state and internal_state.c.Has("tray_icon")) {
+        if (toggle_state and state.c.Has("tray_icon")) {
             ; MsgBox "Setting to :: " internal_state.c["tray_icon"].value
-            TraySetIcon(internal_state.c["tray_icon"].value)
+            TraySetIcon(state.c["tray_icon"].value)
         } else {
             ; MsgBox "Setting to :: " script_meta.custom_icon_path
             TraySetIcon(script_meta.custom_icon_path)
         }
     } catch Error as e {
-        log("WARN: Unable to update tray icon (make sure '" internal_state.c["tray_icon"].value "' is present)")
+        log("WARN: Unable to update tray icon (make sure '" state.c["tray_icon"].value "' is present)")
     }
 
     ; update state toggle
-    internal_state.c["tray_icon"].toggle := toggle_state
-    internal_state.save_all()
+    state.c["tray_icon"].toggle := toggle_state
+    state.save_all()
 }
 
 notify_user(notice_string := "", source_title := "bumper_state") {
@@ -326,66 +319,42 @@ fetch_updates() {
     update_handler.check_for_updates(true)
 }
 
+bumper_debug_display(interval := 2000) {
+    global state, cfg
+
+    if (A_TimeIdle > 1000) {
+        display_str := "idle for " Format("{1}:{2:02}", Floor(A_TimeIdle / 60000), Floor(Mod(A_TimeIdle, 60000) / 1000))
+        disp(display_str, 2, , interval * 0.99)
+
+        ticks_till_bump := (state.c["last_bump_tick"].value + Abs(state.c["bump_interval_with_random"].value)) - A_TickCount
+        display_str := "bump in " Format("{1}:{2:02}", Floor(ticks_till_bump / 60000), Floor(Mod(ticks_till_bump, 60000) / 1000))
+        disp(display_str, 1, , interval * 0.99)
+    }
+
+    if cfg.c["bump_notifications"].value > 2 {
+        settimer((*) => bumper_debug_display(), 0 - interval)
+    }
+}
+
+roll_for(variable := 0, variance := 0.05, multiplier := -1) {
+    return floor(variable + random(0, variable * 0.01)) * multiplier
+}
+
+roll_new_bump_interval_variations() {
+    global state, cfg
+    state.c["bump_interval_with_random"].value := roll_for(cfg.c["bump_interval"].value)
+
+}
+
 /*
 =================================================================================================
 Older funcies
 =================================================================================================
 */
 
-prompt_update() {
-    MsgBox "SelfUpdate currently disabled (as of v1.0.0)"
-    ; if (version_request_variable.readyState != 4) {  ; Not done yet.
-    ;     return
-    ; }
-    ; if (version_request_variable.status == 200) ; OK.
-    ;     if newer_version(version_request_variable.responseText, app_version) == 1
-    ;         msgbox "NEWER version (" strsplit(version_request_variable.responseText, "`r")[1] ") available`n`nhttps://chipy.dev"
-    ;     else
-    ;         TrayTip("Mouse Bumper on the latest version.", "Update Check (" app_version ")", "Mute")
-}
-
-fetch_latest_version_and_prompt(url) {
-    ;version_request_variable := ComObject("Msxml2.XMLHTTP")
-    version_request_variable.open("GET", url, true)
-    version_request_variable.onreadystatechange := prompt_update  ;this sets a callback
-    version_request_variable.send()
-}
-
-newer_version(v_one, v_two) {
-    ; clean strings
-    v_one := StrReplace(v_one, "`r", "")
-    v_one := StrReplace(v_one, "`n", "")
-    v_two := StrReplace(v_two, "`r", "")
-    v_two := StrReplace(v_two, "`n", "")
-
-    ; split the variables into arrays for easy testing
-    v_one_array := StrSplit(v_one, ".")
-    v_two_array := StrSplit(v_two, ".")
-
-    ;debug msgbox "A (" v_one ")`nB (" v_two ")`nL " v_one_array.Length
-
-    ; Check version lengths match
-    if v_one_array.Length != v_two_array.Length
-        return -1
-
-    ; compare arrays until we find a larger one
-    loop v_one_array.Length {
-        ; try{
-        ;debug msgbox Integer(v_one_array[A_Index]) "`n" Integer(v_two_array[A_Index])
-        if Integer(v_one_array[A_Index]) > Integer(v_two_array[A_Index])
-            return 1
-        if Integer(v_one_array[A_Index]) < Integer(v_two_array[A_Index])
-            return 2
-        ; }catch{
-
-        ; }
-    }
-    ; if we make it this far that v_two must be larger
-    return 0
-}
 
 bump() {
-    global cfg
+    global cfg, state
 
     block_mouse := cfg.c["bump_interupt_protection"].value
 
@@ -418,9 +387,6 @@ bump() {
             BlockInput "MouseMove"
         }
 
-
-        ; get start time of bumpts
-        start_tick := A_TickCount
         ; record mouse position before bump
         MouseGetPos(&OutputVarX, &OutputVarY)
 
@@ -437,7 +403,6 @@ bump() {
         dis_x := Floor((rnd_x + cfg.c["bump_distance"].value) * Random(-1, 1) + px_variance)
         dis_y := Floor((rnd_y + cfg.c["bump_distance"].value) * Random(-1, 1) + px_variance)
 
-
         ; toggle sendmode
         previous_sendmode := A_SendMode
         SendMode(cfg.c["bump_input_mode"].value)
@@ -451,6 +416,14 @@ bump() {
                 append_log("[DEBUG]Bump moving " dis_x ":" dis_y " (centered with " c_x ":" c_y ")")
                 ; snap to center with 0 for instant movement
                 MouseMove(c_x, c_y, 0)
+                ; move mouse by desired value relative to center
+                MouseMove(c_x + dis_x, c_y + dis_y, cfg.c["bump_speed"].value, "R")
+
+            case "centered":
+                ; If we are using Centered mode we reset mouse to the center of the screen then move it
+                append_log("[DEBUG]Bump moving " dis_x ":" dis_y " (centered with " cfg.c["bump_distance"].value ":" cfg.c["bump_distance"].value ")")
+                ; snap to center with 0 for instant movement
+                MouseMove(cfg.c["bump_distance"].value, cfg.c["bump_distance"].value, 0)
                 ; move mouse by desired value relative to center
                 MouseMove(c_x + dis_x, c_y + dis_y, cfg.c["bump_speed"].value, "R")
 
@@ -469,7 +442,6 @@ bump() {
 
         ; toggle sendmode
         SendMode(previous_sendmode)
-
 
         if cfg.c["mmo_mode"].value {
             send "{a down}"
@@ -514,30 +486,46 @@ bump() {
     settimer((*) => ToolTip(""), -1000)
     ; shedule the next bump to allow for bump randomness and timely termination
     ; Currently BumpInterval + (1% variance) rounded down
-    time_till_next_bump_check := floor(0 - ((cfg.c["bump_interval"].value + random(0, cfg.c["bump_interval"].value * 0.01))))
+    state.c["last_bump_tick"].value := A_TickCount
+
+    roll_new_bump_interval_variations()
     if cfg.c["bumper_active"].value
-        settimer((*) => bump(), time_till_next_bump_check)
+        settimer((*) => bump(), state.c["bump_interval_with_random"].value)
 }
 
 activate_bumper(*) {
-    global
-    cfg.c["bumper_active"].value := !cfg.c["bumper_active"].value
+    global is_first_execution, cfg, state
+
+    ; special logic for state toggling (FIRST RUN exception to trigger on boot)
+    if is_first_execution
+        is_first_execution := false
+    else
+        cfg.c["bumper_active"].value := !cfg.c["bumper_active"].value
+
     if cfg.c["bumper_active"].value {
         ; mark the current time for auto off
         auto_off_start := A_Now
         ; determine how long we wait between bumps
-        wait_time := floor(0 - (cfg.c["bump_interval"].value + random(0, cfg.c["bump_interval"].value * 0.01)))
+
+        roll_new_bump_interval_variations()
+        state.c["last_bump_tick"].value := A_TickCount
         ; notify user
-        str := "Interval: " round(abs(wait_time / 1000), 2) " sec"
+        str := "Interval: " round(abs(state.c["bump_interval_with_random"].value / 1000), 2) " sec"
         str .= "`nAuto-Disabling in " round(cfg.c["auto_off_mins"].value / 60) ":" round(mod(cfg.c["auto_off_mins"].value, 60))
         ; Moved here to update icon BEFORE notification pops
         Tray_setup()
         notify_user(str, "bumper_state:Activated")
         append_log("[DEBUG]Activated with with " str)
         ; Start the first bump in XXXX time
-        settimer((*) => bump(), wait_time)
+        settimer((*) => bump(), state.c["bump_interval_with_random"].value)
+
+
+        if cfg.c["bump_notifications"].value > 2 {
+            settimer((*) => bumper_debug_display(), -1000)
+        }
     } else {
         ; Moved here to update icon BEFORE notification pops
+
         Tray_setup()
         notify_user("", "bumper_state:Deactivated")
     }
@@ -622,7 +610,7 @@ load_settings() {
 
     cfg.load_all()
     binder.load_all()
-    internal_state.load_all()
+    state.load_all()
 
 }
 
@@ -630,7 +618,7 @@ save_settings() {
     global
     cfg.save_all()
     binder.save_all()
-    internal_state.save_all()
+    state.save_all()
 }
 
 Tray_setup() {
@@ -640,25 +628,31 @@ Tray_setup() {
     a_traymenu.delete()
     script_name_with_version := script_label " v" app_version
     a_traymenu.add(script_name_with_version, (*) => fetch_updates())
-    a_traymenu.default := script_name_with_version
     A_IconTip := script_name_with_version
 
     ; Secind section
     a_traymenu.add()
+    ; ; Toggle info
     if cfg.c["bumper_active"].value {
-        a_traymenu.add("Toggle State 	(active)", activate_bumper.bind())
-        a_traymenu.check("Toggle State 	(active)")
+        A_IconTip .= " (active)"
+        toggle_bumper_label := "Toggle State 	(active)"
         ; mark the current time for auto off
         auto_off_start := A_Now
-        ; run the initial bump to start the chain
-        bump()
     } else {
-        a_traymenu.add("Toggle State 	(inactive)", activate_bumper.bind())
+        A_IconTip .= " (inactive)"
+        toggle_bumper_label := "Toggle State 	(inactive)"
     }
+    a_traymenu.add(toggle_bumper_label, activate_bumper.bind())
+    a_traymenu.default := toggle_bumper_label
+    if (cfg.c["bumper_active"].value)
+        a_traymenu.check(toggle_bumper_label)
+    ; ; RunOnStartup state
     a_traymenu.add("Run on Startup", (*) => run_script_on_startup("toggle"))
     if run_script_on_startup()
         a_traymenu.check("Run on Startup")
     a_traymenu.add("Testing (DevTrigger)", (*) => open_dev())
+
+    ; Section 3
     a_traymenu.add()
     a_traymenu.add("Change Distance 	(" cfg.c["bump_distance"].value "px)", (*) => update_move_distance())
     a_traymenu.add("Change Interval 	(" cfg.c["bump_interval"].value "ms)", (*) => update_move_interval())
@@ -682,7 +676,9 @@ Tray_setup() {
 
     append_log("[INFO]SysTray setup complete`nChange Distance 	(" cfg.c["bump_distance"].value "ms)`nChange Interval 	(" cfg.c["bump_interval"].value "ms)`nChange Duration 	(" cfg.c["bump_duration"].value "ms)")
 
-
+    ;add A_IconTip Traytip IconTooltip
+    if A_IsCompiled
+        A_IconTip .= "[EXE]"
 }
 
 append_log(in_str) {
