@@ -27,10 +27,17 @@
 - [x] added github releases
 1.0.10-11
 - [x] Tested updater
-1.1.1.
+1.1.1
 - [x] Added manual update query (by clicking script name in TrayMenu)
 - [x] Added example ahk_exe
+1.1.4
+- [x] Added tray hover name
+- [x] Moved DevTest in trayMenu
+- [x] Added log_level info in settings
+- [x] Adjust log_level to report boot and bump @level4 leaving ONLY ERRors on default 5
 - [ ] Improved auto-disable timer
+- [ ] Add detection modes (timer-based vs idle-based)
+
 */
 
 #include ..\chipys-ahk-library\chipys-ahk-library.ahk
@@ -42,7 +49,7 @@ Persistent
 sendmode "Input"
 SetMouseDelay 25
 
-app_version := "1.1.3", unused := "custom var"
+app_version := "1.1.4", unused := "custom var"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 ;@Ahk2Exe-SetCopyright    Freeware written by Chipy
@@ -70,14 +77,6 @@ coded_on := "2.0.19"
 if A_AhkVersion != coded_on and !A_IsCompiled
     msgbox "You are running AHK v" A_AhkVersion "`n`rThis code was writting on v" coded_on "`n`nPlease download that exact version from autohotkey.com/download/2.0/"
 
-
-move_distance := 200
-bump_interval := 290000
-bump_duration := 2000
-bump_mode := "centered"
-auto_off_mins := 0
-auto_off_start := 0
-mmo_mode := False
 log_overflow := ""
 
 
@@ -100,17 +99,26 @@ binder.ini("remap_trigger", , "", "hotkey", "Hotkey to trigger remapped key", ["
 ; General
 global cfg := ConfigManagerTool(cfg_path, "ConfigSettings", , script_meta)
 cfg.ini("target_window", , "ahk_exe ShooterGame.exe", "edit", "Name of winow/app that should receive focus for winow-specific actions.`nConsists of a PREFIX (ahk_exe, ahk_class, ahk_id) and a windowHDL`n`nUse 'ahk_exe ' and then the 'APP.exe' name for easiest user reference.")
-cfg.ini("log_level", , 5, "edit", "Sets logging level, lower value = more detail. `nUsed to show/hide things like UpdateNotification(passiveNoActionNeeded) items `n(Default: 5)")
+cfg.ini("log_level", , "REPORT", "DropDownList", "Sets logging level, lower value = more detail. `n`n"
+    . "[SPAM]   Spam messages just to report everything`n"
+    . "[DEBUG]  Debugging info for detailed reports on things`n"
+    . "[INFO]   Info for verbose reports even a user might read`n"
+    . "[WARN]   Warnings for things a user might need to know are important`n"
+    . "[ALERT]  Alerts for when you ned to let the user know something is WRONG or failed`n"
+    . "[ERR]    Error reports (critical possible even terminatino/crash levels)`n"
+    . "[REPORT]	Forced display for things that just need to be logged always `n`n(Default: REPORT/10)",
+    LogLevel.options())
 ; Bump settings
 cfg.ini("bump_interupt_protection", , 1, "checkbox", "Bump protection help prevent script interupting actively used mouse. (disabling this will block mouse inputs for the duration of the bump action)`n(Default:1)")
-cfg.ini("bump_mode", , "relative", "edit", "Set the bumper mode. Current options:`n1 - 'Centered' where the mouse will move around from the center of the screen`n2 - 'Relative' where the mouse moves relative to it's current position `n(Default:Relative)")
+cfg.ini("bump_position_memory", , 1, "checkbox", "When enabled, attempts to return mouse to it's original coordinates after bumping.`n(Default:1)")
+cfg.ini("bump_mode", , "relative", "edit", "BumpMode determines how the script attempts to move the mouse.`n`nCurrent options:`n'Centered' - Mouse is moved to center of active monistor and then bumped bump_distance pixels in a random direction.`n'Relative' - Mouse moves bump_distance pixels relative to it's current position `n(Default:Relative)")
 cfg.ini("auto_off_mins", , 0, "edit", "New time to run for before automatically turning off?`n60 = 1 Hour`n480 = 8 Hours/workday")
 cfg.ini("mmo_mode", , 0, "edit", "Toggle for MMOs to move left right with A and D when bumping (1 = on, 0 = off)`n(Default:0)")
 cfg.ini("bump_distance_variance", , 50, "edit", "Distance in pixels to use as random variance range. `n(Default: 50)")
 cfg.ini("bump_distance", , 500, "edit", "Distance in pixels to move the mouse when bumping it. `n(Default: 500)")
-cfg.ini("bump_interval", , 290000, "edit", "Time in ms between bump checks. 60,000 = 1 minute, 300,000 = 5 minutes.`n(Default:290,000)")
+cfg.ini("bump_interval", , 290000, "edit", "Time in ms between bump checks. The bump will be skipped if the mouse has been active within min_idle_time (2sec + ~5% of time value) `n60,000 = 1 minute `n300,000 = 5 minutes.`n(Default:290,000)")
 cfg.ini("bump_duration", , 1000, "edit", "REPLACED (v1.1.0) by 'bump_speed'`nTime in ms to be moving the mouse. AKA duration of the bump. ")
-cfg.ini("bump_input_mode", , "Event", "edit", "Set the input mode for the bump event. Interacts with bump_speed setting.`n'Event' will emulate mouse movements better. `n'Input' will be faster.`n(Default: 'Event')")
+cfg.ini("bump_input_mode", , "Event", "edit", "Set the input mode for the bump event. Interacts with bump_speed setting.`n'Event' will emulate mouse movements better. `n'Input' will be faster.(failing to trigger idle timeout reset on some systems)`n(Default: 'Event')")
 cfg.ini("bump_speed", , 15, "edit", "Speed is the movement speed of the mouse during the bump motion. Range 0-100 lower is faster `n(Default:15)")
 cfg.ini("bump_notifications", , 0, "edit", "Sets the notification mode for mouse bumper:`n0 - off`n1 - Windows Toaster Notifications`n2 - Toaster + Tooltips when bumping mouse")
 cfg.ini("bumper_active", , , "Checkbox", "Toggle to track the active state of the bumper")
@@ -200,13 +208,16 @@ open_dev() {
     ; toggle_tray_icon()
     ; internal_state.gui_open()
 
-    ; test write perms
-    if (MsgBox("Will now attempt to write to file:: " LOG_PATH, "TEST?", "icon? yn") = "yes") {
+    ; ; test write perms
+    ; if (MsgBox("Will now attempt to write to file:: " LOG_PATH, "TEST?", "icon? yn") = "yes") {
 
-        FileAppend(FormatTime(A_Now, "yyyyMMdd HH:mm:ss") "|: DEV TEST STRING`n", LOG_PATH)
-        MsgBox "If you've seen no errors it likely worked, will attempt to open logs now"
-        run(LOG_PATH)
-    }
+    ;     FileAppend(FormatTime(A_Now, "yyyyMMdd HH:mm:ss") "|: DEV TEST STRING`n", LOG_PATH)
+    ;     MsgBox "If you've seen no errors it likely worked, will attempt to open logs now"
+    ;     run(LOG_PATH)
+    ; }
+
+    ; Testing hte UITool
+    test_prompt := UITool.UpdatePrompt((*)=>tooltip("YOU HIT YES"),"Test Title","Do you want to APPROVE?!","Body text for this approval reques")
 }
 
 auto_click() {
@@ -287,7 +298,7 @@ notify_user(notice_string := "", source_title := "bumper_state") {
     }
 
     ; select what notification to send based on notificaiton mode
-    append_log(notice_string)
+    append_log("[ALERT] " notice_string)
     switch cfg.c["bump_notifications"].value {
         case 1:
             TrayTip(notice_string, source_title, 0x34)
@@ -377,14 +388,14 @@ bump() {
     block_mouse := cfg.c["bump_interupt_protection"].value
 
     ; note on the screen to help know when bumps are attempted
-    append_log("Bump triggering [blockinput=" block_mouse "]")
+    append_log("[INFO]Bump triggering [blockinput=" block_mouse "]")
     ; check if auto_off is enabled AKA in use
     if cfg.c["auto_off_mins"].value > 0 {
         ;debug msgbox auto_off_start "`n" auto_off "`n" dateadd(auto_off_start, auto_off, "minutes") "`n" A_Now
         ; check if runtime is complete and disable bumper
         if dateadd(auto_off_start, cfg.c["auto_off_mins"].value, "minutes") < A_Now {
             cfg.c["bumper_active"].value := !cfg.c["bumper_active"].value
-            append_log("Bumper DEACTIVATED (by AutoDisableTimer)")
+            append_log("[ALERT]Bumper DEACTIVATED (by AutoDisableTimer)")
             cfg.c["auto_off_mins"].value := 0
             save_settings()
             Restart
@@ -393,7 +404,7 @@ bump() {
 
 
     ; calculate a idle time min.
-    min_idle_time := 1000 + (cfg.c["bump_interval"].value * 0.2)
+    min_idle_time := 2000 + (cfg.c["bump_interval"].value * 0.05)
     ; safety break to prevent bumping while the mouse is in use
     if A_TimeIdle > min_idle_time and cfg.c["bumper_active"].value {
 
@@ -410,13 +421,6 @@ bump() {
         start_tick := A_TickCount
         ; record mouse position before bump
         MouseGetPos(&OutputVarX, &OutputVarY)
-
-        ; ; check for valid mouse coords and if invalid set to center width
-        ; if OutputVarX > A_ScreenWidth*2
-        ; 	OutputVarX := A_ScreenWidth//2
-
-        ; loop for time period configured by user
-        ; loop {
 
         ; Set TargetWindow active etc
         if cfg.c["target_window"].value {
@@ -439,18 +443,18 @@ bump() {
         ; move mouse out by random value (or other modes)
         switch StrLower(cfg.c["bump_mode"].value) {
             case "centered":
-                MouseMove((A_ScreenWidth // 2) + dis_x, (A_ScreenHeight // 2) + dis_y, cfg.c["bump_speed"].value, "R")
+                ; If we are using Centered mode we reset mouse to the center of the screen then move it
+                c_x := (A_ScreenWidth // 2)
+                c_y := (A_ScreenHeight // 2)
+                append_log("[DEBUG]Bump moving " dis_x ":" dis_y " (centered with " c_x ":" c_y ")")
+                ; snap to center with 0 for instant movement
+                MouseMove(c_x, c_y, 0)
+                ; move mouse by desired value relative to center
+                MouseMove(c_x + dis_x, c_y + dis_y, cfg.c["bump_speed"].value, "R")
 
             case "relative":
-                ; tooltip "START", OutputVarX, OutputVarY, 4
-                ; tooltip "END", OutputVarX + dis_x, OutputVarY + dis_y, 5
-                ; MsgBox "Mouse bumped from: " OutputVarX ":" OutputVarY "`nTO:`n" OutputVarX + dis_x ":" OutputVarY + dis_y "`nv:" cfg.c["bump_distance_variance"].value "`ndist:" cfg.c["bump_distance"].value "  [" dis_x ":" dis_y "]"
-
-                ; SendMode("Input")
-                ; MouseMove(OutputVarX, OutputVarY)
-                ; SendMode("Event")
+                append_log("[DEBUG]Bump moving " dis_x ":" dis_y " (relative to " OutputVarX ":" OutputVarY ")")
                 MouseMove(dis_x, dis_y, cfg.c["bump_speed"].value, "R")
-
 
             default:
                 SendMode("Input")
@@ -458,7 +462,7 @@ bump() {
                 SendMode("Event")
                 MouseMove(dis_x, dis_y, cfg.c["bump_speed"].value, "R")
                 MsgBox "No valid Bumper mode has been selected. Please assign a valid mode and try again. (valid modes should be listed in the info button of 'bumper_mode' setting)", "Missing Setting!", "icon! t10"
-
+                append_log("[ERROR] Invalid bump_mode set, defaulting to event&relative!")
         }
 
         ; toggle sendmode
@@ -475,33 +479,29 @@ bump() {
             send "{d up}"
         }
 
-
-        ; ; note on the screen to help know when bumps happen
-        ; ToolTip("MouseBumped")
         ; sleep to let mouse move
         sleep 100
-        ; ; Check to see if we've met the duration count
-        ; if A_TickCount - start_tick > bump_duration
-        ;     break
-        append_log("Bumping by " dis_x ":" dis_y "  (relative movement)")
-        ; }
-        ; return mouse to where it was
-        MouseMove(OutputVarX, OutputVarY)
-        append_log("Returning to " OutputVarX ":" OutputVarY)
+
+
+        if (cfg.c["bump_position_memory"].value) {
+            ; return mouse to where it was
+            MouseMove(OutputVarX, OutputVarY)
+            append_log("[DEBUG]Returning to " OutputVarX ":" OutputVarY)
+        }
     } else {
         ; not that this bump is being skipped
         if LOG_LEVEL < 2 {
             ToolTip("Activity detected")
             tooltip_timeout(, 1)
         }
-        append_log("Mouse in use within the last " floor(min_idle_time) "ms so bump skipped")
+        append_log("[INFO]Mouse in use within the last " floor(min_idle_time) "ms so bump skipped")
 
     }
 
     ; Unblock
     if (!block_mouse) {
         BlockInput "MouseMoveOff"
-        if LOG_LEVEL < 2 {
+        if LOG_LEVEL <= LogLevel.DEBUG {
             tooltip("released...", 10, 10, 2)
             tooltip_timeout(1000, 2)
 
@@ -511,8 +511,10 @@ bump() {
     ; wait 1second and hide the notification
     settimer((*) => ToolTip(""), -1000)
     ; shedule the next bump to allow for bump randomness and timely termination
+    ; Currently BumpInterval + (1% variance) rounded down
+    time_till_next_bump_check := floor(0 - ((cfg.c["bump_interval"].value + random(0, cfg.c["bump_interval"].value * 0.01))))
     if cfg.c["bumper_active"].value
-        settimer((*) => bump(), floor(0 - ((cfg.c["bump_interval"].value + random(0, cfg.c["bump_interval"].value * 0.01)))))
+        settimer((*) => bump(), time_till_next_bump_check)
 }
 
 activate_bumper(*) {
@@ -529,7 +531,7 @@ activate_bumper(*) {
         ; Moved here to update icon BEFORE notification pops
         Tray_setup()
         notify_user(str, "bumper_state:Activated")
-        append_log("Activated with with " str)
+        append_log("[DEBUG]Activated with with " str)
         ; Start the first bump in XXXX time
         settimer((*) => bump(), wait_time)
     } else {
@@ -542,7 +544,7 @@ activate_bumper(*) {
 }
 
 Restart(*) {
-    append_log("Reloading")
+    append_log("[INFO]Reloading")
     reload
 }
 
@@ -574,8 +576,8 @@ update_move_interval() {
 }
 
 update_move_duration() {
-    global bump_duration, bump_interval
-    bump_duration := InputBox("New interval to move mouse in decaseconds?`n1000 = 1 second`n300,000 = 5 minutes", "Change Mouse Bump Duration", , bump_duration).value
+    global cfg
+    cfg.c["bump_duration"].value := InputBox("New interval to move mouse in decaseconds?`n1000 = 1 second`n300,000 = 5 minutes", "Change Mouse Bump Duration", , cfg.c["bump_duration"].value).value
     check_interval_vs_duration()
     save_settings()
     Tray_setup()
@@ -620,15 +622,6 @@ load_settings() {
     binder.load_all()
     internal_state.load_all()
 
-    ; move_distance := IniRead(cfg_path, "Settings", "bump_distance", "200")
-    ; bump_interval := IniRead(cfg_path, "Settings", "bump_interval", "290000")
-    ; bump_duration := IniRead(cfg_path, "Settings", "bump_duration", "2000")
-    ; bump_mode := IniRead(cfg_path, "Settings", "bump_mode", "centered")
-    ; ; bumper_active := IniRead(cfg_path, "Settings", "bumper_active", 0)
-    ; auto_off_mins := IniRead(cfg_path, "Settings", "auto_off_mins", 0)
-    ; ; log_mode := IniRead(cfg_path, "Settings", "log_mode", False)
-    ; mmo_mode := IniRead(cfg_path, "Settings", "mmo_mode", False)
-    ; target_window := IniRead(cfg_path, "Settings", "target_window", "ahk_exe ms-teams.exe")
 }
 
 save_settings() {
@@ -636,22 +629,19 @@ save_settings() {
     cfg.save_all()
     binder.save_all()
     internal_state.save_all()
-
-    ; Iniwrite(move_distance, cfg_path, "Settings", "bump_distance")
-    ; Iniwrite(bump_interval, cfg_path, "Settings", "bump_interval")
-    ; Iniwrite(bump_duration, cfg_path, "Settings", "bump_duration")
-    ; Iniwrite(bump_mode, cfg_path, "Settings", "bump_mode")
-    ; ; Iniwrite(bumper_active, cfg_path, "Settings", "bumper_active")
-    ; Iniwrite(auto_off_mins, cfg_path, "Settings", "auto_off_mins")
-    ; ; Iniwrite(log_mode, cfg_path, "Settings", "log_mode")
-    ; Iniwrite(mmo_mode, cfg_path, "Settings", "mmo_mode")
-    ; Iniwrite(target_window, cfg_path, "Settings", "target_window")
 }
 
 Tray_setup() {
     global
+
+    ; First section
     a_traymenu.delete()
-    a_traymenu.add(script_label " v" app_version, (*) => fetch_updates())
+    script_name_with_version := script_label " v" app_version
+    a_traymenu.add(script_name_with_version, (*) => fetch_updates())
+    a_traymenu.default := script_name_with_version
+    A_IconTip := script_name_with_version
+
+    ; Secind section
     a_traymenu.add()
     if cfg.c["bumper_active"].value {
         a_traymenu.add("Toggle State 	(active)", activate_bumper.bind())
@@ -670,7 +660,7 @@ Tray_setup() {
     a_traymenu.add()
     a_traymenu.add("Change Distance 	(" cfg.c["bump_distance"].value "px)", (*) => update_move_distance())
     a_traymenu.add("Change Interval 	(" cfg.c["bump_interval"].value "ms)", (*) => update_move_interval())
-    a_traymenu.add("Change Duration 	(" bump_duration "ms)", (*) => update_move_duration())
+    a_traymenu.add("Change Duration 	(" cfg.c["bump_duration"].value "ms)", (*) => update_move_duration())
     a_traymenu.add("Change Mode 	(" cfg.c["bump_mode"].value ")", (*) => update_mode())
     a_traymenu.add("Change MMO 	(" cfg.c["mmo_mode"].value ")", (*) => update_mmo())
     a_traymenu.add("Change AutoDisableTimer 	(" cfg.c["auto_off_mins"].value " mins)" DisplayCurrentTimePlus(cfg.c["auto_off_mins"].value), (*) => update_auto_off())
@@ -682,14 +672,13 @@ Tray_setup() {
     a_traymenu.add("Restart", Restart.bind())
     a_traymenu.add("Exit", terminate.bind())
 
-    a_traymenu.default := script_label " v" app_version
 
     ; update icon
     toggle_tray_icon(cfg.c["bumper_active"].value)
     ; refresh log_level
-    LOG_LEVEL := cfg.c["log_level"].value
+    LOG_LEVEL := LogLevel(cfg.c["log_level"].value)
 
-    append_log("SysTray setup complete`nChange Distance 	(" cfg.c["bump_distance"].value "ms)`nChange Interval 	(" cfg.c["bump_interval"].value "ms)`nChange Duration 	(" cfg.c["bump_duration"].value "ms)")
+    append_log("[INFO]SysTray setup complete`nChange Distance 	(" cfg.c["bump_distance"].value "ms)`nChange Interval 	(" cfg.c["bump_interval"].value "ms)`nChange Duration 	(" cfg.c["bump_duration"].value "ms)")
 
 
 }
@@ -705,174 +694,3 @@ append_log(in_str) {
         ToolTip "log_overflow created at " FormatTime(A_Now, "yyyyMMdd HH:mm:ss")
     }
 }
-
-
-/*
-=================================================================================================
-HotKeys
-=================================================================================================
-*/
-
-; !^Down::
-; {
-;     click "right", "D"
-;     click "left", "D"
-;     sleep 20
-;     click "right", "U"
-;     click "left", "U"
-; }
-
-
-/*
-Requirements
-A GitHub repo with version tags like v1.0.0 or 1.0.0.
-The release should have a .zip asset containing your updated AHK script.
-7-Zip must be installed at the default path. You can adjust the path or use an AHK unzip library if needed.
-
-#Requires AutoHotkey v2.0
-#Include %A_ScriptDir%\Lib\7ZipSimple.ahk ; Optional: for unzip functionality using 7-Zip
-
-CURRENT_VERSION := "1.0.0" ; Replace with your app's current version
-GITHUB_USER := "YourGitHubUsername"
-GITHUB_REPO := "YourRepoName"
-
-CheckForUpdate() {
-    global CURRENT_VERSION, GITHUB_USER, GITHUB_REPO
-
-    githubApiUrl := "https://api.github.com/repos/" GITHUB_USER "/" GITHUB_REPO "/releases/latest"
-    http := ComObject("WinHttp.WinHttpRequest.5.1")
-    try {
-        http.Open("GET", githubApiUrl)
-        http.Send()
-        if (http.Status != 200) {
-            MsgBox "Failed to check for updates. HTTP status: " http.Status
-            return
-        }
-        json := JSON.Parse(http.ResponseText)
-        latestVersion := Trim(json.tag_name, "v") ; Remove leading 'v' if present
-        if (CompareVersions(latestVersion, CURRENT_VERSION) > 0) {
-            response := MsgBox("A new version (" latestVersion ") is available. Do you want to update?", "Update Available", 0x4)
-            if (response == "Yes") {
-                DownloadAndInstallUpdate(json)
-            }
-        } else {
-            MsgBox "You're using the latest version (" CURRENT_VERSION ")."
-        }
-    } catch err {
-        MsgBox "Error checking for update: " err.Message
-    }
-}
-
-CompareVersions(v1, v2) {
-    parts1 := StrSplit(v1, ".")
-    parts2 := StrSplit(v2, ".")
-    loop Max(parts1.Length, parts2.Length) {
-        p1 := parts1.Has(A_Index) ? parts1[A_Index] : 0
-        p2 := parts2.Has(A_Index) ? parts2[A_Index] : 0
-        if (p1 != p2)
-            return p1 - p2
-    }
-    return 0
-}
-
-DownloadAndInstallUpdate(json) {
-    ; Find the .zip asset
-    for asset in json.assets {
-        if InStr(asset.name, ".zip") {
-            zipUrl := asset.browser_download_url
-            break
-        }
-    }
-
-    if !zipUrl {
-        MsgBox "Could not find a zip file in the latest release."
-        return
-    }
-
-    tempZip := A_ScriptDir "\update.zip"
-    destDir := A_ScriptDir "\update"
-
-    ; Download ZIP
-    try {
-        UrlDownloadToFile(zipUrl, tempZip)
-    } catch {
-        MsgBox "Failed to download update zip."
-        return
-    }
-
-    ; Ensure destination folder exists
-    DirCreate(destDir)
-
-    ; Unzip
-    try {
-        RunWait '"C:\Program Files\7-Zip\7z.exe" x "' tempZip '" -o"' destDir '" -y', , "Hide"
-    } catch {
-        MsgBox "Failed to unzip update. Ensure 7-Zip is installed."
-        return
-    }
-
-    ; Find the new script (assuming same name)
-    newScript := destDir "\" A_ScriptName
-    if !FileExist(newScript) {
-        MsgBox "Updated script not found at: " newScript
-        return
-    }
-
-    ; Run new script and exit current
-    Run newScript
-    ExitApp
-}
-
-CheckForUpdate()
-/*
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
