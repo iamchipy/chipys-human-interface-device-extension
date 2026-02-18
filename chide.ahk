@@ -150,9 +150,6 @@ global update_handler := UpdateHandler(, script_meta.app_version, script_meta.fi
 
 
 notify_user(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), " v" app_version " Ready!")
-; TrayTip(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), script_label " v" app_version " Ready!", "Mute")
-; fetch_latest_version_and_prompt("https://chipy.dev/res/Chipys_Mouse_Bumper.exe_version.txt")
-
 return
 
 
@@ -192,7 +189,6 @@ DisplayCurrentTimePlus(minutes, use_military_time := False, time_only := False, 
     return " (" title "" formattedTime ")"
 }
 
-
 ; Build the string for TrayTip (toaster) notificaiton of current state on reboot
 build_tray_string(bumper_state, auto_off_mins) {
     tip_string := bumper_state ? "Mode: Active" : "Mode: Inactive"
@@ -200,7 +196,6 @@ build_tray_string(bumper_state, auto_off_mins) {
         tip_string .= DisplayCurrentTimePlus(auto_off_mins)
     return tip_string
 }
-
 
 open_settings() {
     cfg.gui_open()
@@ -262,16 +257,12 @@ restart_script() {
     reload
 }
 
-
 toggle_tray_icon(toggle_state := -1) {
     global state, script_meta
     ; Set defaults if we arn't being directed to set a given state
     if (toggle_state == -1) {
         toggle_state := !state.c["tray_icon"].toggle
     }
-
-    ; tooltip internal_state.c["tray_icon"].ToString()
-    ; MsgBox internal_state.c["tray_icon"].ToString() "`nstate == " internal_state.c["tray_icon"].toggle
 
     try {
         ; execute toggle
@@ -335,7 +326,7 @@ bumper_debug_display(interval := 2000) {
         display_str := "idle for " Format("{1}:{2:02}", Floor(A_TimeIdle / 60000), Floor(Mod(A_TimeIdle, 60000) / 1000))
         disp(display_str, 2, , interval * 0.99)
 
-        ticks_till_bump := (state.c["last_bump_tick"].value + Abs(state.c["bump_interval_with_random"].value))- A_TickCount
+        ticks_till_bump := (state.c["last_bump_tick"].value + Abs(state.c["bump_interval_with_random"].value)) - A_TickCount
         display_str := "bump in " Format("{1}:{2:02}", Floor(ticks_till_bump / 60000), Floor(Mod(ticks_till_bump, 60000) / 1000))
         disp(display_str, 1, , interval * 0.99)
     }
@@ -637,23 +628,31 @@ Tray_setup() {
     a_traymenu.delete()
     script_name_with_version := script_label " v" app_version
     a_traymenu.add(script_name_with_version, (*) => fetch_updates())
-    a_traymenu.default := script_name_with_version
     A_IconTip := script_name_with_version
 
     ; Secind section
     a_traymenu.add()
+    ; ; Toggle info
     if cfg.c["bumper_active"].value {
-        a_traymenu.add("Toggle State 	(active)", activate_bumper.bind())
-        a_traymenu.check("Toggle State 	(active)")
+        A_IconTip .= " (active)"
+        toggle_bumper_label := "Toggle State 	(active)"
         ; mark the current time for auto off
         auto_off_start := A_Now
     } else {
-        a_traymenu.add("Toggle State 	(inactive)", activate_bumper.bind())
+        A_IconTip .= " (inactive)"
+        toggle_bumper_label := "Toggle State 	(inactive)"
     }
+    a_traymenu.add(toggle_bumper_label, activate_bumper.bind())
+    a_traymenu.default := toggle_bumper_label
+    if (cfg.c["bumper_active"].value)
+        a_traymenu.check(toggle_bumper_label)
+    ; ; RunOnStartup state
     a_traymenu.add("Run on Startup", (*) => run_script_on_startup("toggle"))
     if run_script_on_startup()
         a_traymenu.check("Run on Startup")
     a_traymenu.add("Testing (DevTrigger)", (*) => open_dev())
+
+    ; Section 3
     a_traymenu.add()
     a_traymenu.add("Change Distance 	(" cfg.c["bump_distance"].value "px)", (*) => update_move_distance())
     a_traymenu.add("Change Interval 	(" cfg.c["bump_interval"].value "ms)", (*) => update_move_interval())
@@ -677,7 +676,9 @@ Tray_setup() {
 
     append_log("[INFO]SysTray setup complete`nChange Distance 	(" cfg.c["bump_distance"].value "ms)`nChange Interval 	(" cfg.c["bump_interval"].value "ms)`nChange Duration 	(" cfg.c["bump_duration"].value "ms)")
 
-
+    ;add A_IconTip Traytip IconTooltip
+    if A_IsCompiled
+        A_IconTip .= "[EXE]"
 }
 
 append_log(in_str) {
