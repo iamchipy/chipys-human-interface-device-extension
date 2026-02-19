@@ -51,7 +51,7 @@ Persistent
 sendmode "Input"
 SetMouseDelay 25
 
-app_version := "1.1.5", unused := "custom var"
+app_version := "1.1.6", unused := "custom var"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 ;@Ahk2Exe-SetCopyright    Freeware written by Chipy
@@ -73,6 +73,7 @@ global SCRIPT_NAME := "chide"
 global CFG_PATH := SCRIPT_NAME ".cfg"
 global LOG_PATH := SCRIPT_NAME ".log"
 SCRIPT_LABEL := "Chipy HIDExtensions"
+; GUI_FONT_SIZE := 22
 
 
 coded_on := "2.0.19"
@@ -101,20 +102,15 @@ binder.ini("remap_trigger", , "", "hotkey", "Hotkey to trigger remapped key", ["
 
 ; General
 global cfg := ConfigManagerTool(cfg_path, "ConfigSettings", , script_meta)
-cfg.ini("target_window", , "ahk_exe ShooterGame.exe", "edit", "Name of winow/app that should receive focus for winow-specific actions.`nConsists of a PREFIX (ahk_exe, ahk_class, ahk_id) and a windowHDL`n`nUse 'ahk_exe ' and then the 'APP.exe' name for easiest user reference.")
-cfg.ini("log_level", , "REPORT", "DropDownList", "Sets logging level, lower value = more detail. `n`n"
-    . "[SPAM]   Spam messages just to report everything`n"
-    . "[DEBUG]  Debugging info for detailed reports on things`n"
-    . "[INFO]   Info for verbose reports even a user might read`n"
-    . "[WARN]   Warnings for things a user might need to know are important`n"
-    . "[ALERT]  Alerts for when you ned to let the user know something is WRONG or failed`n"
-    . "[ERR]    Error reports (critical possible even terminatino/crash levels)`n"
-    . "[REPORT]	Forced display for things that just need to be logged always `n`n(Default: REPORT/10)",
-    LogLevel.options())
+cfg.ini("target_window", , "", "edit", "Name of winow/app that should receive focus for winow-specific actions.`nConsists of a PREFIX (ahk_exe, ahk_class, ahk_id) and a windowHDL`n`nUse 'ahk_exe ' and then the 'APP.exe' name for easiest user reference.")
+cfg.ini("log_level", , "REPORT", "DropDownList",
+    "Sets logging level, lower value = more detail. `n`n" .
+    LogLevel.descriptions() "`n`n(Default: REPORT/10)",
+    LogLevel.options_as_array())
 ; Bump settings
 cfg.ini("bump_interupt_protection", , 1, "checkbox", "Bump protection help prevent script interupting actively used mouse. (disabling this will block mouse inputs for the duration of the bump action)`n(Default:1)")
 cfg.ini("bump_position_memory", , 1, "checkbox", "When enabled, attempts to return mouse to it's original coordinates after bumping.`n(Default:1)")
-cfg.ini("bump_mode", , "relative", "edit", "BumpMode determines how the script attempts to move the mouse.`n`nCurrent options:`n'Centered' - Mouse is moved to center of active monitor and then bumped bump_distance pixels in a random direction.`n'Relative' - Mouse moves bump_distance pixels relative to it's current position`n'minimum' - Mouse is moved to bump_distance from 0:0 and then bumped bump_distance pixels in a random direction.  `n(Default:Relative)")
+cfg.ini("bump_mode", , "relative", "edit", "BumpMode determines how the script attempts to move the mouse.`n`nCurrent options:`n'Centered' - Mouse is moved to center of active monitor and then bumped bump_distance pixels in a random direction.`n'Relative' - Mouse moves bump_distance pixels relative to it's current position`n'Minimum' - Mouse is moved to bump_distance from 0:0 and then bumped bump_distance pixels in a random direction.  `n(Default:Relative)")
 cfg.ini("auto_off_mins", , 0, "edit", "New time to run for before automatically turning off?`n60 = 1 Hour`n480 = 8 Hours/workday")
 cfg.ini("mmo_mode", , 0, "edit", "Toggle for MMOs to move left right with A and D when bumping (1 = on, 0 = off)`n(Default:0)")
 cfg.ini("bump_distance_variance", , 50, "edit", "Distance in pixels to use as random variance range. `n(Default: 50)")
@@ -123,7 +119,13 @@ cfg.ini("bump_interval", , 290000, "edit", "Time in ms between bump checks. The 
 cfg.ini("bump_duration", , 1000, "edit", "REPLACED (v1.1.0) by 'bump_speed'`nTime in ms to be moving the mouse. AKA duration of the bump. ")
 cfg.ini("bump_input_mode", , "Event", "edit", "Set the input mode for the bump event. Interacts with bump_speed setting.`n'Event' will emulate mouse movements better. `n'Input' will be faster.(failing to trigger idle timeout reset on some systems)`n(Default: 'Event')")
 cfg.ini("bump_speed", , 15, "edit", "Speed is the movement speed of the mouse during the bump motion. Range 0-100 lower is faster `n(Default:15)")
-cfg.ini("bump_notifications", , 0, "edit", "Sets the notification mode for mouse bumper:`n0 - off`n1 - Windows Toaster Notifications`n2 - Toaster + Tooltips when bumping mouse")
+cfg.ini("bump_notifications", , 0, "edit",
+    "Set which items you want to receive Windows(Toaster) Notification pop-ups for. To select multiple simply add all values together.`n`n" .
+    "0 - off`n" .
+    "1 - Script successful reboot`n" .
+    "2 - Script updates`n" .
+    "4 - Mouse bumper state changes`n" .
+    "8 - Mouse bumper auto-off feautre (when enabled and triggered)")
 cfg.ini("bumper_active", , , "Checkbox", "Toggle to track the active state of the bumper")
 ; Remapper settings
 cfg.ini("remap_key", , , "edit", "Set the input key to be played/used`n`n" HOTKEY_CHEATSHEET)
@@ -419,7 +421,7 @@ bump() {
                 ; move mouse by desired value relative to center
                 MouseMove(c_x + dis_x, c_y + dis_y, cfg.c["bump_speed"].value, "R")
 
-            case "centered":
+            case "minimum":
                 ; If we are using Centered mode we reset mouse to the center of the screen then move it
                 append_log("[DEBUG]Bump moving " dis_x ":" dis_y " (centered with " cfg.c["bump_distance"].value ":" cfg.c["bump_distance"].value ")")
                 ; snap to center with 0 for instant movement
@@ -677,8 +679,8 @@ Tray_setup() {
     append_log("[INFO]SysTray setup complete`nChange Distance 	(" cfg.c["bump_distance"].value "ms)`nChange Interval 	(" cfg.c["bump_interval"].value "ms)`nChange Duration 	(" cfg.c["bump_duration"].value "ms)")
 
     ;add A_IconTip Traytip IconTooltip
-    if A_IsCompiled
-        A_IconTip .= "[EXE]"
+    if !A_IsCompiled
+        A_IconTip .= "[DEV]"
 }
 
 append_log(in_str) {
