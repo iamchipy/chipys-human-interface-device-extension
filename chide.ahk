@@ -37,8 +37,11 @@
 - [x] Adjust log_level to report boot and bump @level4 leaving ONLY ERRors on default 5
 - [x] Improved update prompt
 1.1.5
-- [ ] Improved auto-disable timer
+- [x] Improved auto-disable timer
 - [ ] Add detection modes (timer-based vs idle-based)
+1.1.6
+MOVED TO GITHUB notes
+https://github.com/iamchipy/chipys-human-interface-device-extension
 
 */
 
@@ -51,7 +54,7 @@ Persistent
 sendmode "Input"
 SetMouseDelay 25
 
-app_version := "1.1.6", unused := "custom var"
+app_version := "1.1.8", unused := "custom var"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 ;@Ahk2Exe-SetCopyright    Freeware written by Chipy
@@ -73,7 +76,7 @@ global SCRIPT_NAME := "chide"
 global CFG_PATH := SCRIPT_NAME ".cfg"
 global LOG_PATH := SCRIPT_NAME ".log"
 SCRIPT_LABEL := "Chipy HIDExtensions"
-; GUI_FONT_SIZE := 22
+GUI_FONT_SIZE := 22
 
 
 coded_on := "2.0.19"
@@ -102,6 +105,7 @@ binder.ini("remap_trigger", , "", "hotkey", "Hotkey to trigger remapped key", ["
 
 ; General
 global cfg := ConfigManagerTool(cfg_path, "ConfigSettings", , script_meta)
+cfg.ini("font_scaler", , 22, "edit", "Controles the size of the GUI (settings/hotkeys) fonts.`n`n15 - Recommended min`n36 - Recommended max`n(Default:20)")
 cfg.ini("target_window", , "", "edit", "Name of winow/app that should receive focus for winow-specific actions.`nConsists of a PREFIX (ahk_exe, ahk_class, ahk_id) and a windowHDL`n`nUse 'ahk_exe ' and then the 'APP.exe' name for easiest user reference.")
 cfg.ini("log_level", , "REPORT", "DropDownList",
     "Sets logging level, lower value = more detail. `n`n" .
@@ -111,7 +115,7 @@ cfg.ini("log_level", , "REPORT", "DropDownList",
 cfg.ini("bump_interupt_protection", , 1, "checkbox", "Bump protection help prevent script interupting actively used mouse. (disabling this will block mouse inputs for the duration of the bump action)`n(Default:1)")
 cfg.ini("bump_position_memory", , 1, "checkbox", "When enabled, attempts to return mouse to it's original coordinates after bumping.`n(Default:1)")
 cfg.ini("bump_mode", , "relative", "edit", "BumpMode determines how the script attempts to move the mouse.`n`nCurrent options:`n'Centered' - Mouse is moved to center of active monitor and then bumped bump_distance pixels in a random direction.`n'Relative' - Mouse moves bump_distance pixels relative to it's current position`n'Minimum' - Mouse is moved to bump_distance from 0:0 and then bumped bump_distance pixels in a random direction.  `n(Default:Relative)")
-cfg.ini("auto_off_mins", , 0, "edit", "New time to run for before automatically turning off?`n60 = 1 Hour`n480 = 8 Hours/workday")
+; cfg.ini("auto_off_mins", , 0, "edit", "DISCONTINUED`n`nNew time to run for before automatically turning off?`n60 = 1 Hour`n480 = 8 Hours/workday")
 cfg.ini("mmo_mode", , 0, "edit", "Toggle for MMOs to move left right with A and D when bumping (1 = on, 0 = off)`n(Default:0)")
 cfg.ini("bump_distance_variance", , 50, "edit", "Distance in pixels to use as random variance range. `n(Default: 50)")
 cfg.ini("bump_distance", , 500, "edit", "Distance in pixels to move the mouse when bumping it. `n(Default: 500)")
@@ -119,7 +123,7 @@ cfg.ini("bump_interval", , 290000, "edit", "Time in ms between bump checks. The 
 cfg.ini("bump_duration", , 1000, "edit", "REPLACED (v1.1.0) by 'bump_speed'`nTime in ms to be moving the mouse. AKA duration of the bump. ")
 cfg.ini("bump_input_mode", , "Event", "edit", "Set the input mode for the bump event. Interacts with bump_speed setting.`n'Event' will emulate mouse movements better. `n'Input' will be faster.(failing to trigger idle timeout reset on some systems)`n(Default: 'Event')")
 cfg.ini("bump_speed", , 15, "edit", "Speed is the movement speed of the mouse during the bump motion. Range 0-100 lower is faster `n(Default:15)")
-cfg.ini("bump_notifications", , 0, "edit",
+cfg.ini("bump_notifications", , 2, "edit",
     "Set which items you want to receive Windows(Toaster) Notification pop-ups for. To select multiple simply add all values together.`n`n" .
     "0 - off`n" .
     "1 - Script successful reboot`n" .
@@ -127,6 +131,7 @@ cfg.ini("bump_notifications", , 0, "edit",
     "4 - Mouse bumper state changes`n" .
     "8 - Mouse bumper auto-off feautre (when enabled and triggered)")
 cfg.ini("bumper_active", , , "Checkbox", "Toggle to track the active state of the bumper")
+cfg.ini("bumper_timeout", , , "Time", "Select a time of day for the bumper to automatically turn self off.")
 ; Remapper settings
 cfg.ini("remap_key", , , "edit", "Set the input key to be played/used`n`n" HOTKEY_CHEATSHEET)
 ; AutoClicker
@@ -166,36 +171,11 @@ FUNCTIONS
 =================================================================================================
 */
 
-DisplayCurrentTimePlus(minutes, use_military_time := False, time_only := False, title := "Until: ") {
-    if minutes < 1
-        return ""
-
-    ; Get current system time in YYYYMMDDHH24MISS format
-    currentTime := A_Now
-
-    ; Convert minutes to seconds
-    secondsToAdd := minutes * 60
-
-    ; Add seconds to current time
-    futureTime := DateAdd(currentTime, secondsToAdd, "Seconds")
-
-    ; Format as HH:MM
-    if use_military_time
-        formattedTime := FormatTime(futureTime, "HH:mm")
-    else
-        formattedTime := FormatTime(futureTime, "hh:mm tt")
-
-    ; Allow time only output
-    if time_only
-        return formattedTime
-    return " (" title "" formattedTime ")"
-}
-
 ; Build the string for TrayTip (toaster) notificaiton of current state on reboot
 build_tray_string(bumper_state, auto_off_mins) {
     tip_string := bumper_state ? "Mode: Active" : "Mode: Inactive"
     if auto_off_mins
-        tip_string .= DisplayCurrentTimePlus(auto_off_mins)
+        tip_string .= bumper_timeout_remaining()
     return tip_string
 }
 
@@ -296,16 +276,44 @@ notify_user(notice_string := "", source_title := "bumper_state") {
 
     ; select what notification to send based on notificaiton mode
     append_log("[ALERT] " notice_string)
-    switch cfg.c["bump_notifications"].value {
-        case 1:
+
+    ; now we address each notice function in decending order
+    notice_tracker := cfg.c["bump_notifications"].value
+
+    ;     "8 - Mouse bumper auto-off feautre (when enabled and triggered)") "Set which items you want to receive Windows(Toaster) Notification pop-ups for. To select multiple simply add all values together.`n`n" .
+    ; "0 - off`n" .
+    ; "1 - Script successful reboot`n" .
+    ; "2 - Script updates`n" .
+    ; "4 - Mouse bumper state changes`n" .
+    ; "8 - Mouse bumper auto-off feautre (when enabled and triggered)")
+
+
+    ; #4 toster for update success
+    if notice_tracker >= 4 {
+        notice_tracker -= 4
+        if notice_string and RegExMatch(notice_string, "i)ctivated") {
             TrayTip(notice_string, source_title, 0x34)
-        case 2:
+        }
+    }
+
+    ; #2 toster for update success
+    if notice_tracker >= 2 {
+        notice_tracker -= 2
+        if notice_string and RegExMatch(notice_string, "i)update|latest") {
             TrayTip(notice_string, source_title, 0x34)
             tooltip(notice_string)
             tooltip_timeout()
-        default:
-            ; do nothing
+        }
     }
+
+    ; #1 toaster for reboots
+    if notice_tracker >= 1 {
+        notice_tracker -= 1
+        if notice_string and RegExMatch(notice_string, "i)eboot") {
+            TrayTip(notice_string, source_title, 0x34)
+        }
+    }
+
 }
 
 ; sends the remapped key when then triggered
@@ -346,6 +354,29 @@ roll_new_bump_interval_variations() {
     global state, cfg
     state.c["bump_interval_with_random"].value := roll_for(cfg.c["bump_interval"].value)
 
+}
+
+bumper_timeout_remaining(mode := "str") {
+    global cfg
+    ; trim-off date
+    trimmed_timeout_remaining := SubStr(cfg.c["bumper_timeout"].value, 9)
+    ; Create a new timestamp using TODAY'S date + the SELECTED time
+    normalized_timeout := A_YYYY . A_MM . A_DD . trimmed_timeout_remaining
+    remaining_minutes := DateDiff(normalized_timeout, A_Now, "Minutes")
+    shutoff_time := DateAdd(A_Now, remaining_minutes, "Minutes")
+
+    out_string := "N/A"
+    switch StrLower(mode) {
+        case "str":
+            ; manually build value
+            abs_minutes := Abs(remaining_minutes)
+            hours := abs_minutes // 60
+            minutes := mod(abs_minutes, 60)
+            out_string := hours ":" minutes " (" FormatTime(shutoff_time, "h:mmtt") ")"
+        default:
+    }
+
+    return out_string
 }
 
 /*
@@ -661,7 +692,7 @@ Tray_setup() {
     a_traymenu.add("Change Duration 	(" cfg.c["bump_duration"].value "ms)", (*) => update_move_duration())
     a_traymenu.add("Change Mode 	(" cfg.c["bump_mode"].value ")", (*) => update_mode())
     a_traymenu.add("Change MMO 	(" cfg.c["mmo_mode"].value ")", (*) => update_mmo())
-    a_traymenu.add("Change AutoDisableTimer 	(" cfg.c["auto_off_mins"].value " mins)" DisplayCurrentTimePlus(cfg.c["auto_off_mins"].value), (*) => update_auto_off())
+    a_traymenu.add("Change AutoDisableTimer 	" bumper_timeout_remaining(), (*) => update_auto_off())
     a_traymenu.add("Change Taget App 	(" cfg.c["target_window"].value ")", (*) => update_target_window())
     a_traymenu.add()
     a_traymenu.add("Settings", (*) => open_settings())
@@ -670,17 +701,27 @@ Tray_setup() {
     a_traymenu.add("Restart", Restart.bind())
     a_traymenu.add("Exit", terminate.bind())
 
-
-    ; update icon
-    toggle_tray_icon(cfg.c["bumper_active"].value)
-    ; refresh log_level
-    LOG_LEVEL := LogLevel(cfg.c["log_level"].value)
+    ; Apply other settings
+    apply_general_settings()
 
     append_log("[INFO]SysTray setup complete`nChange Distance 	(" cfg.c["bump_distance"].value "ms)`nChange Interval 	(" cfg.c["bump_interval"].value "ms)`nChange Duration 	(" cfg.c["bump_duration"].value "ms)")
 
     ;add A_IconTip Traytip IconTooltip
     if !A_IsCompiled
         A_IconTip .= "[DEV]"
+}
+
+apply_general_settings() {
+    global cfg, GUI_FONT_SIZE, LOG_LEVEL
+
+    ; Set the tray icon
+    toggle_tray_icon(cfg.c["bumper_active"].value)
+
+    ; refresh log_level
+    LOG_LEVEL := LogLevel(cfg.c["log_level"].value)
+    ; Set font scale
+    GUI_FONT_SIZE := cfg.c["font_scaler"].value
+
 }
 
 append_log(in_str) {
