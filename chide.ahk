@@ -131,7 +131,7 @@ cfg.ini("bump_notifications", , 2, "edit",
     "4 - Mouse bumper state changes`n" .
     "8 - Mouse bumper auto-off feautre (when enabled and triggered)")
 cfg.ini("bumper_active", , , "Checkbox", "Toggle to track the active state of the bumper")
-cfg.ini("bumper_timeout", , , "Time", "Select a time of day for the bumper to automatically turn self off.")
+cfg.ini("bumper_timeout", , , "Time", "Select a time of day for the bumper to automatically turn self off. `n`nFOR NOW the only way to disable this is to manually delete the value from the CFG file.")
 ; Remapper settings
 cfg.ini("remap_key", , , "edit", "Set the input key to be played/used`n`n" HOTKEY_CHEATSHEET)
 ; AutoClicker
