@@ -129,9 +129,11 @@ cfg.ini("bump_notifications", , 2, "edit",
     "1 - Script successful reboot`n" .
     "2 - Script updates`n" .
     "4 - Mouse bumper state changes`n" .
-    "8 - Mouse bumper auto-off feautre (when enabled and triggered)")
+    "8 - Mouse bumper auto-off feautre (when enabled and triggered)`n" .
+    "16 - Mouse bumper DEBUG HUD"
+)
 cfg.ini("bumper_active", , , "Checkbox", "Toggle to track the active state of the bumper")
-cfg.ini("bumper_timeout", , , "Time", "Select a time of day for the bumper to automatically turn self off. `n`nFOR NOW the only way to disable this is to manually delete the value from the CFG file.")
+cfg.ini("bumper_timeout", , , "Time", "Select a time of day for the bumper to automatically turn self off. `n(NOTE) When the auto-off time is reached it creates a window of time (5x the length of your current bump_interval) in which it will skip bumping and self-disable. `n`nFOR NOW the only way to disable this is to manually delete the value from the CFG file.")
 ; Remapper settings
 cfg.ini("remap_key", , , "edit", "Set the input key to be played/used`n`n" HOTKEY_CHEATSHEET)
 ; AutoClicker
@@ -157,9 +159,17 @@ global update_handler := UpdateHandler(, script_meta.app_version, script_meta.fi
 
 
 notify_user(build_tray_string(cfg.c["bumper_active"].value, cfg.c["auto_off_mins"].value), " v" app_version " Ready!")
+
+
+class TimeoutTracker {
+    static is_negative(value_to_check) {
+        if Integer(value_to_check) <= 0
+            return true
+        return false
+    }
+}
+
 return
-
-
 /*
 =================================================================================================
 END OF AUTO EXEC
@@ -171,6 +181,9 @@ FUNCTIONS
 =================================================================================================
 */
 
+
+
+
 ; Build the string for TrayTip (toaster) notificaiton of current state on reboot
 build_tray_string(bumper_state, auto_off_mins) {
     tip_string := bumper_state ? "Mode: Active" : "Mode: Inactive"
@@ -181,6 +194,8 @@ build_tray_string(bumper_state, auto_off_mins) {
 
 open_settings() {
     cfg.gui_open()
+    Tray_setup()
+
 }
 
 open_bindings() {
@@ -189,7 +204,8 @@ open_bindings() {
     binder.bind_all_keys()
 }
 
-open_dev() {
+dev_func() {
+    bumper_debug_display(400)
     ; toggle_tray_icon()
     ; internal_state.gui_open()
 
@@ -202,7 +218,7 @@ open_dev() {
     ; }
 
     ; Testing hte UITool
-    test_prompt := UITool.UpdatePrompt((*) => tooltip("YOU HIT YES"), "Test Title", "Do you want to APPROVE?!", "Body text for this approval reques")
+    ; test_prompt := UITool.UpdatePrompt((*) => tooltip("YOU HIT YES"), "Test Title", "Do you want to APPROVE?!", "Body text for this approval reques")
 }
 
 auto_click() {
@@ -264,28 +280,34 @@ toggle_tray_icon(toggle_state := -1) {
     state.save_all()
 }
 
-notify_user(notice_string := "", source_title := "bumper_state") {
+; Handles user notification and filtering desired/undesired via regEx
+notify_user(notice_string := "", source_title := "") {
     global cfg, script_meta
 
-    if !notice_string {
-        notice_string := source_title
+    if !source_title
         source_title := script_meta.display_name
-    } {
-        source_title := script_meta.display_name ":: " source_title
-    }
+
+    ; if !notice_string {
+    ;     notice_string := source_title
+    ;     source_title := script_meta.display_name
+    ; } {
+    ;     source_title := script_meta.display_name ":: " source_title
+    ; }
 
     ; select what notification to send based on notificaiton mode
-    append_log("[ALERT] " notice_string)
+    append_log(notice_string)
 
     ; now we address each notice function in decending order
     notice_tracker := cfg.c["bump_notifications"].value
 
-    ;     "8 - Mouse bumper auto-off feautre (when enabled and triggered)") "Set which items you want to receive Windows(Toaster) Notification pop-ups for. To select multiple simply add all values together.`n`n" .
-    ; "0 - off`n" .
-    ; "1 - Script successful reboot`n" .
-    ; "2 - Script updates`n" .
-    ; "4 - Mouse bumper state changes`n" .
-    ; "8 - Mouse bumper auto-off feautre (when enabled and triggered)")
+
+    ; #8 Mouse bumper auto-off feautre (when enabled and triggered)
+    if notice_tracker >= 8 {
+        notice_tracker -= 8
+        if notice_string and RegExMatch(notice_string, "i)timeout") {
+            TrayTip(notice_string, source_title, 0x34)
+        }
+    }
 
 
     ; #4 toster for update success
@@ -334,15 +356,18 @@ bumper_debug_display(interval := 2000) {
 
     if (A_TimeIdle > 1000) {
         display_str := "idle for " Format("{1}:{2:02}", Floor(A_TimeIdle / 60000), Floor(Mod(A_TimeIdle, 60000) / 1000))
-        disp(display_str, 2, , interval * 0.99)
+        disp(display_str, 1, , interval * 0.99)
 
         ticks_till_bump := (state.c["last_bump_tick"].value + Abs(state.c["bump_interval_with_random"].value)) - A_TickCount
-        display_str := "bump in " Format("{1}:{2:02}", Floor(ticks_till_bump / 60000), Floor(Mod(ticks_till_bump, 60000) / 1000))
-        disp(display_str, 1, , interval * 0.99)
+        display_str := "bump in " Format("{1}:{2:02}", Floor(ticks_till_bump / 60000), Floor(Mod(Abs(ticks_till_bump), 60000) / 1000))
+        disp(display_str, 2, , interval * 0.99)
+
+        dis_str := "ShouldTimeout? := " should_bumper_timeout() " [" bumper_timeout_remaining("seconds") "]"
+        disp(dis_str, 3, , interval * 0.99)
     }
 
-    if cfg.c["bump_notifications"].value > 2 {
-        settimer((*) => bumper_debug_display(), 0 - interval)
+    if cfg.c["bump_notifications"].value & 16 {
+        settimer((*) => bumper_debug_display(interval), 0 - interval)
     }
 }
 
@@ -356,6 +381,13 @@ roll_new_bump_interval_variations() {
 
 }
 
+
+; Returns remaining time (if any) for the bumper_timeout
+; Mode (str) [default:="str"]
+;  - "str" Returns a formated string 'h:mm (h:mmtt)'
+;  - "bool" Returns true/false if there is time remaining (today)
+;  - "minutes|Seconds|Hours" Returns int value of denoted time interval
+
 bumper_timeout_remaining(mode := "str") {
     global cfg
     ; trim-off date
@@ -367,12 +399,19 @@ bumper_timeout_remaining(mode := "str") {
 
     out_string := "N/A"
     switch StrLower(mode) {
+        case "minutes":
+            return remaining_minutes
+        case "seconds":
+            return DateDiff(normalized_timeout, A_Now, "Seconds")
+        case "hours":
+            return DateDiff(normalized_timeout, A_Now, "Hours")
         case "str":
             ; manually build value
             abs_minutes := Abs(remaining_minutes)
             hours := abs_minutes // 60
             minutes := mod(abs_minutes, 60)
-            out_string := hours ":" minutes " (" FormatTime(shutoff_time, "h:mmtt") ")"
+            sign := TimeoutTracker.is_negative(remaining_minutes) ? "-" : ""
+            out_string := FormatTime(shutoff_time, "h:mm tt") " (" sign hours ":" minutes ")"
 
         case "bool":
             if remaining_minutes > 0
@@ -384,6 +423,23 @@ bumper_timeout_remaining(mode := "str") {
     return out_string
 }
 
+
+; Checks to see if the current time
+; window_multiplier [int]
+; - 5 Will check if the current time is within bumper_interval*window_multipler
+should_bumper_timeout(window_multipler := 5) {
+    global cfg
+    remaining_seconds := bumper_timeout_remaining("seconds")
+    notify_user("DEBUG:")
+
+    if (remaining_seconds > 0)
+        return false
+    else if (remaining_seconds <= 0 and remaining_seconds * 1000 > (0 - cfg.c["bump_interval"].value * window_multipler))
+        return true
+    ; Finally return false as backup
+    return false
+}
+
 /*
 =================================================================================================
 Older funcies
@@ -392,24 +448,24 @@ Older funcies
 
 
 bump() {
-    global cfg, state
+    global cfg, state, SCRIPT_NAME
 
+    minimal_idle_ms_buffer := 5000
     block_mouse := cfg.c["bump_interupt_protection"].value
 
     ; note on the screen to help know when bumps are attempted
     append_log("[INFO]Bump triggering [blockinput=" block_mouse "]")
     ; check if auto_off is enabled AKA in use
-    if !bumper_timeout_remaining() {
-        cfg.c["bumper_active"].value := !cfg.c["bumper_active"].value
-        notify_user("[ALERT]Bumper DEACTIVATED (by AutoDisableTimer)")
-        save_settings()
-        Restart
+    if should_bumper_timeout() {
+        notify_user("Auto-Off timeout reached! Disabling mouse bumper...")
+        activate_bumper()
+        return
 
     }
 
 
     ; calculate a idle time min.
-    min_idle_time := 2000 + (cfg.c["bump_interval"].value * 0.05)
+    min_idle_time := minimal_idle_ms_buffer + (cfg.c["bump_interval"].value * 0.05)
     ; safety break to prevent bumping while the mouse is in use
     if A_TimeIdle > min_idle_time and cfg.c["bumper_active"].value {
 
@@ -459,7 +515,7 @@ bump() {
                 ; snap to center with 0 for instant movement
                 MouseMove(cfg.c["bump_distance"].value, cfg.c["bump_distance"].value, 0)
                 ; move mouse by desired value relative to center
-                MouseMove(c_x + dis_x, c_y + dis_y, cfg.c["bump_speed"].value, "R")
+                MouseMove(cfg.c["bump_distance"].value + dis_x, cfg.c["bump_distance"].value + dis_y, cfg.c["bump_speed"].value, "R")
 
             case "relative":
                 append_log("[DEBUG]Bump moving " dis_x ":" dis_y " (relative to " OutputVarX ":" OutputVarY ")")
@@ -545,7 +601,7 @@ activate_bumper(*) {
         state.c["last_bump_tick"].value := A_TickCount
         ; notify user
         str := "Interval: " round(abs(state.c["bump_interval_with_random"].value / 1000), 2) " sec"
-        str .= "`nAuto-Disabling in " round(cfg.c["auto_off_mins"].value / 60) ":" round(mod(cfg.c["auto_off_mins"].value, 60))
+        str .= "`nAuto-Disabling in " bumper_timeout_remaining("str")
         ; Moved here to update icon BEFORE notification pops
         Tray_setup()
         notify_user(str, "bumper_state:Activated")
@@ -554,9 +610,9 @@ activate_bumper(*) {
         settimer((*) => bump(), state.c["bump_interval_with_random"].value)
 
 
-        if cfg.c["bump_notifications"].value > 2 {
-            settimer((*) => bumper_debug_display(), -1000)
-        }
+        if cfg.c["bump_notifications"].value & 16
+            settimer((*) => bumper_debug_display(), -500)
+
     } else {
         ; Moved here to update icon BEFORE notification pops
 
@@ -684,7 +740,7 @@ Tray_setup() {
     a_traymenu.add("Run on Startup", (*) => run_script_on_startup("toggle"))
     if run_script_on_startup()
         a_traymenu.check("Run on Startup")
-    a_traymenu.add("Testing (DevTrigger)", (*) => open_dev())
+    a_traymenu.add("Testing (DevTrigger)", (*) => dev_func())
 
     ; Section 3
     a_traymenu.add()
