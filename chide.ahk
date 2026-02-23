@@ -373,6 +373,11 @@ bumper_timeout_remaining(mode := "str") {
             hours := abs_minutes // 60
             minutes := mod(abs_minutes, 60)
             out_string := hours ":" minutes " (" FormatTime(shutoff_time, "h:mmtt") ")"
+
+        case "bool":
+            if remaining_minutes > 0
+                return true
+            return false
         default:
     }
 
@@ -394,16 +399,12 @@ bump() {
     ; note on the screen to help know when bumps are attempted
     append_log("[INFO]Bump triggering [blockinput=" block_mouse "]")
     ; check if auto_off is enabled AKA in use
-    if cfg.c["auto_off_mins"].value > 0 {
-        ;debug msgbox auto_off_start "`n" auto_off "`n" dateadd(auto_off_start, auto_off, "minutes") "`n" A_Now
-        ; check if runtime is complete and disable bumper
-        if dateadd(auto_off_start, cfg.c["auto_off_mins"].value, "minutes") < A_Now {
-            cfg.c["bumper_active"].value := !cfg.c["bumper_active"].value
-            append_log("[ALERT]Bumper DEACTIVATED (by AutoDisableTimer)")
-            cfg.c["auto_off_mins"].value := 0
-            save_settings()
-            Restart
-        }
+    if !bumper_timeout_remaining() {
+        cfg.c["bumper_active"].value := !cfg.c["bumper_active"].value
+        notify_user("[ALERT]Bumper DEACTIVATED (by AutoDisableTimer)")
+        save_settings()
+        Restart
+
     }
 
 
